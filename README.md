@@ -345,6 +345,7 @@ Capabilities describe what your plugin contributes to the editor. They are decla
 | **Slash commands** | `/command` entries in the editor slash menu | `context.addVoidenSlashGroup()` |
 | **Sidebar tab** | A panel tab in the left or right sidebar | `context.registerSidebarTab()` |
 | **Paste handler** | Transform pasted text into a block (e.g. paste a curl command → HTTP request block) | `context.paste.registerBlockOwner()` |
+| **Runner** | Headless support — lets your plugin work with the `voiden-runner` CLI | `RunnerFactory` in `src/runner.ts` |
 | **Main process (Electron)** | Node.js IPC handlers for OS-level operations | `ipcMain.handle()` in `src/main-process.ts` |
 
 ---
@@ -457,6 +458,133 @@ context.ui.registerSettings({
 
 ---
 
+## Runner Support (`voiden-runner`)
+
+[`voiden-runner`](https://github.com/VoidenHQ/voiden/tree/main/packages/voiden-runner) is a headless CLI that executes `.void` files outside of the Voiden desktop app — useful for CI pipelines, scripting, and automation.
+
+If you select the **Runner** capability during scaffolding, two extra files are generated:
+
+```
+├── build-runner.mjs   ← esbuild script → dist/runner.js
+└── src/
+    └── runner.ts      ← RunnerFactory (pure Node.js, no browser APIs)
+```
+
+### How it works
+
+The runner plugin system is **separate** from the Electron plugin system:
+
+| | Electron app (`src/plugin.ts`) | `voiden-runner` CLI (`src/runner.ts`) |
+|---|---|---|
+| Context | `CorePluginContext` | `RunnerContext` |
+| Environment | Browser (Chromium) | Node.js |
+| UI APIs | Full (sidebar, editor, toasts…) | None (no-ops) |
+| Build output | `dist/{id}.js` (ESM, via Vite) | `dist/runner.js` (CJS, via esbuild) |
+| Distribution | Inside `.zip` → installed in Voiden | GitHub release asset `runner.js` |
+| Install method | Extensions → Install from file | `voiden-runner plugin install {id}` |
+
+### `src/runner.ts`
+
+Exports a `RunnerFactory` — a function that receives a `RunnerContext` and returns `{ onload }`.
+
+```ts
+import type { RunnerFactory } from '@voiden/sdk/runner';
+
+const factory: RunnerFactory = (context) => ({
+  onload: async () => {
+    // Register how your block type maps to an HTTP request
+    context.registerBlockSchema({
+      name: 'my-block',
+      attrs: { url: { default: '' }, method: { default: 'GET' } },
+    });
+
+    context.onBuildRequest(async (request, blocks) => {
+      const block = blocks.find((b) => b.type === 'my-block');
+      if (!block) return; // not our block — pass through unchanged
+      return {
+        ...request,
+        method: block.attrs?.method ?? 'GET',
+        url: block.attrs?.url ?? request.url,
+      };
+    });
+
+    context.onProcessResponse(async (response, blocks, request) => {
+      if (context.verbose) {
+        console.log(`[my-plugin] ${response.status} ${request.url}`);
+      }
+      // Use context.report.add() to emit structured assertions or log entries
+    });
+  },
+});
+
+export default factory;
+```
+
+### `RunnerContext` API
+
+| Method / Property | Description |
+|---|---|
+| `context.registerBlockSchema(def)` | Tell the runner how to normalize your block's attrs. Mirrors the `addAttributes()` definition from your TipTap node. |
+| `context.onBuildRequest(handler)` | Register a handler that reads the parsed blocks and builds/mutates the `CliRequestState`. Return the modified request or `void` to pass through. |
+| `context.onProcessResponse(handler)` | Called after execution with the `CliResponseState`. Use for assertions, logging, or chaining. |
+| `context.pipeline.registerHook(stage, handler, priority?)` | Hook into a named pipeline stage at a specific priority. Advanced use. |
+| `context.protocols.executeWebSocket(req)` | Execute a WebSocket request (for socket plugins). |
+| `context.protocols.executeGrpc(req)` | Execute a gRPC request (for gRPC plugins). |
+| `context.verbose` | `true` when the runner was invoked with `--verbose`. |
+| `context.report.add(entry)` | Emit a structured log, assertion, or section marker into the run report. |
+
+#### `CliRequestState` shape
+
+```ts
+{
+  method: string
+  url: string
+  headers:     Array<{ key: string; value: string; enabled?: boolean }>
+  queryParams: Array<{ key: string; value: string; enabled?: boolean }>
+  pathParams?: Array<{ key: string; value: string; enabled?: boolean }>
+  body?: string
+  contentType?: string
+  metadata?: Record<string, any>
+}
+```
+
+#### `CliResponseState` shape
+
+```ts
+{
+  protocol: string       // 'http', 'websocket', 'grpc', …
+  status?: number
+  statusText?: string
+  durationMs: number
+  size?: number
+  body?: string
+  error?: string
+  metadata?: Record<string, any>
+}
+```
+
+### Build and publish the runner
+
+```bash
+npm run build:runner
+# → dist/runner.js
+```
+
+Publish `dist/runner.js` as a GitHub release asset **named exactly `runner.js`** at your release tag (e.g. `v1.0.0`). The `voiden-runner` CLI looks for this asset name when installing community plugins.
+
+```bash
+# Users install your runner plugin with:
+voiden-runner plugin install {your-plugin-id}
+```
+
+> Your plugin must also be listed in the [VoidenHQ/plugins](https://github.com/VoidenHQ/plugins) `extensions.json` catalogue before users can discover and install it via `voiden-runner`.
+
+### Key rule: keep `src/runner.ts` free of browser APIs
+
+`src/runner.ts` runs in plain Node.js — no `window`, no React, no DOM. Any browser-only import will crash the runner. If you share logic between `src/plugin.ts` and `src/runner.ts`, put it in a shared utility file in `src/` that imports nothing from the browser.
+
+---
+
 ## Build, Zip, and Install Workflow
 
 ```
@@ -514,10 +642,19 @@ npm run release
    - Call `context.events.on('tab:changed', cb)` in `onload`
    - Push the returned unsubscribe function into `cleanupFns`
 
-7. **Test changes quickly:**
+7. **Support headless execution with `voiden-runner`:**
+   - Select the **Runner** capability during scaffolding (or add `src/runner.ts` manually)
+   - Implement `context.registerBlockSchema()` and `context.onBuildRequest()` in `src/runner.ts`
+   - Build with `npm run build:runner` → `dist/runner.js`
+   - Publish `dist/runner.js` as a GitHub release asset named exactly `runner.js`
+
+8. **Test changes quickly:**
    ```bash
    npm run build && npm run zip
-   # Then reinstall the zip in Voiden
+   # Reinstall the zip in Voiden
+
+   npm run build:runner
+   # voiden-runner plugin install {id}  (after publishing runner.js to a release)
    ```
 
 ---

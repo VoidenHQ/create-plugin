@@ -130,6 +130,7 @@ const { caps } = await prompts({
     { title: 'Slash commands',           value: 'slashCommands'   },
     { title: 'Sidebar tab',              value: 'sidebar'         },
     { title: 'Paste handler',            value: 'paste'           },
+    { title: 'Runner (voiden-runner CLI headless support)', value: 'runner' },
     { title: 'Main process (Electron)',  value: 'mainProcess'     },
   ],
   hint: '- Space to select, Enter to confirm',
@@ -218,6 +219,7 @@ if (existsSync(dir)) {
 
 const { id, name, description, author, icon, version, voidenVersion, priority } = identity;
 const hasMainProcess = caps.includes('mainProcess');
+const hasRunner      = caps.includes('runner');
 const hasBlocks = caps.includes('blocks');
 const hasPipeline = caps.includes('requestPipeline');
 const hasSlash = caps.includes('slashCommands');
@@ -308,8 +310,14 @@ const pkgJson = {
   scripts: {
     build: 'node build.mjs',
     ...(hasMainProcess ? { 'build:main': 'node build-main.mjs' } : {}),
+    ...(hasRunner      ? { 'build:runner': 'node build-runner.mjs' } : {}),
     zip: 'node zip.mjs',
-    release: `node build.mjs${hasMainProcess ? ' && node build-main.mjs' : ''} && node zip.mjs && node generate-manifest.mjs`,
+    release: [
+      'node build.mjs',
+      hasMainProcess ? '&& node build-main.mjs' : '',
+      hasRunner      ? '&& node build-runner.mjs' : '',
+      '&& node zip.mjs && node generate-manifest.mjs',
+    ].filter(Boolean).join(' '),
   },
   peerDependencies: {
     '@voiden/sdk': '>=1.0.10',
@@ -573,6 +581,93 @@ console.log(\`Built dist/\${pluginId}-main.cjs\`)
 `);
 }
 
+// ── build-runner.mjs (only if runner) ────────────────────────────────────────
+// Builds src/runner.ts via esbuild into dist/runner.js (CJS, Node.js target).
+// This file is published as a GitHub release asset named "runner.js" so that
+// `voiden-runner plugin install <id>` can download and use it headlessly.
+
+if (hasRunner) {
+  write(join(dir, 'build-runner.mjs'), `#!/usr/bin/env node
+import { build } from 'esbuild'
+import { existsSync, readFileSync } from 'fs'
+
+const manifest = JSON.parse(readFileSync('./manifest.json', 'utf8'))
+const entry = './src/runner.ts'
+
+if (!existsSync(entry)) {
+  console.error('No src/runner.ts found — create it before running build:runner')
+  process.exit(1)
+}
+
+await build({
+  entryPoints: [entry],
+  bundle: true,
+  platform: 'node',
+  format: 'cjs',
+  outfile: 'dist/runner.js',
+  external: [
+    // These are provided by voiden-runner at load time — do not bundle them.
+    '@voiden/sdk',
+    '@voiden/sdk/runner',
+    '@voiden/executors',
+    'electron',
+    'node:*',
+    'child_process', 'fs', 'path', 'os', 'http', 'https', 'net',
+    'crypto', 'worker_threads', 'stream', 'events', 'util', 'url', 'buffer',
+  ],
+  minify: true,
+})
+
+console.log(\`Built dist/runner.js — publish this as a "runner.js" GitHub release asset.\`)
+console.log(\`Users install it with: voiden-runner plugin install \${manifest.id}\`)
+`);
+}
+
+// ── src/runner.ts (only if runner) ────────────────────────────────────────────
+// Exports a RunnerFactory — a plain Node.js module with no browser APIs.
+// voiden-runner loads this file via dynamic import() to support headless
+// execution of .void files from the CLI.
+
+if (hasRunner) {
+  const runnerTs = `import type { RunnerFactory } from '@voiden/sdk/runner';
+${hasBlocks && blockNames.length > 0 ? `// Block schema mirrors the TipTap node attrs from src/plugin.ts\n` : ''}
+const factory: RunnerFactory = (context) => ({
+  onload: async () => {
+${hasBlocks && blockNames.length > 0 ? blockNames.map((bn) => `
+    // Register block schema so voiden-runner can parse "${bn}" blocks in .void files
+    context.registerBlockSchema({
+      name: '${bn}',
+      attrs: {
+        // Mirror the attrs defined in your TipTap node in src/plugin.ts
+        // e.g. label: { default: '' },
+      },
+    });`).join('\n') + '\n' : ''}
+    // Handle how ${name} blocks are translated into an HTTP request.
+    // 'blocks' is the raw content array from the parsed .void file.
+    context.onBuildRequest(async (request, blocks) => {
+      // Find the first block owned by this plugin
+      const block = blocks.find((b) => ${hasBlocks && blockNames.length > 0 ? `b.type === '${blockNames[0]}'` : `b.type === '${id}'`});
+      if (!block) return; // not our block — pass through
+
+      // Modify the request based on block attrs
+      // e.g. request.url = block.attrs?.url ?? request.url;
+      return request;
+    });
+
+    // Handle the response after execution (optional).
+    context.onProcessResponse(async (response, blocks, request) => {
+      if (context.verbose) {
+        console.log(\`[${id}] \${request.method} \${request.url} → \${response.status}\`);
+      }
+    });
+  },
+});
+
+export default factory;
+`;
+  write(join(dir, 'src', 'runner.ts'), runnerTs);
+}
+
 // ── src/plugin.ts ─────────────────────────────────────────────────────────────
 
 const onloadLines = [];
@@ -818,17 +913,22 @@ console.log(`
     manifest.json        changelog.json
     package.json         tsconfig.json
     build.mjs            zip.mjs
-    generate-manifest.mjs${hasMainProcess ? '\n    build-main.mjs' : ''}
+    generate-manifest.mjs${hasMainProcess ? '\n    build-main.mjs' : ''}${hasRunner ? '\n    build-runner.mjs' : ''}
     .gitignore
-    src/plugin.ts${hasMainProcess ? '\n    src/main-process.ts' : ''}
+    src/plugin.ts${hasMainProcess ? '\n    src/main-process.ts' : ''}${hasRunner ? '\n    src/runner.ts' : ''}
     src/skill.md
 
   Next steps:
     cd ${outDir}
     npm install
-    npm run build       # build the plugin
-    npm run zip         # package to dist/${id}.zip
+    npm run build       # build the renderer bundle
+    npm run zip         # package to dist/${id}.zip${hasRunner ? `
+    npm run build:runner  # build dist/runner.js for voiden-runner CLI
 
-  Install locally:
+  Runner (headless):
+    Publish dist/runner.js as a GitHub release asset named "runner.js"
+    Users install it with: voiden-runner plugin install ${id}` : ''}
+
+  Install in Voiden:
     Extensions → ⋯ → Install from file → dist/${id}.zip
 `);
