@@ -29,6 +29,7 @@ npm create @voiden/plugin
 - [Capabilities](#capabilities)
 - [Plugin API Reference](#plugin-api-reference)
 - [Build, Zip, and Install Workflow](#build-zip-and-install-workflow)
+- [CI / Automated Release](#ci--automated-release)
 - [Where to Start Making Changes](#where-to-start-making-changes)
 - [Publishing Your Plugin](#publishing-your-plugin)
 
@@ -71,7 +72,10 @@ my-plugin/
 ├── build.mjs              ← Vite build script (renderer bundle)
 ├── zip.mjs                ← packages dist/ into an installable .zip
 ├── generate-manifest.mjs  ← validates and logs manifest info
-└── .gitignore
+├── .gitignore
+└── .github/
+    └── workflows/
+        └── release.yml    ← GitHub Actions: build & publish on git tag
 ```
 
 If you selected **Main process (Electron)**, two extra files are added:
@@ -613,6 +617,80 @@ Use `npm run release` to do all steps in one command:
 npm run release
 # → build → zip → validate manifest
 ```
+
+---
+
+## CI / Automated Release
+
+When you select the **Runner** capability (or any combination of capabilities), the scaffold generates a GitHub Actions workflow at `.github/workflows/release.yml`. This workflow automates the full build-and-release cycle every time you push a version tag.
+
+### How to trigger a release
+
+```bash
+git tag v1.2.0
+git push origin v1.2.0
+```
+
+GitHub Actions picks up the `v*` tag, runs the full build, and creates a GitHub Release with all artifacts attached.
+
+### What the workflow does
+
+1. **Checks out** the repo and sets up Node 20
+2. **Installs** dependencies (`npm install`)
+3. **Builds the renderer bundle** — `node build.mjs` → `dist/{id}.js`
+4. **Builds the main-process bundle** — `node build-main.mjs` → `dist/{id}-main.cjs` *(only if mainProcess selected)*
+5. **Builds the runner bundle** — `node build-runner.mjs` → `dist/runner.js` *(only if runner selected)*
+6. **Packages the zip** — `node zip.mjs` → `dist/{id}.zip`
+7. **Creates a GitHub Release** and uploads:
+   - `dist/{id}.zip` — installable in Voiden via Extensions → Install from file
+   - `manifest.json` — displayed in the Extensions browser
+   - `src/skill.md` — AI skill description
+   - `dist/runner.js` — consumed by `voiden-runner plugin install {id}` *(only if runner selected)*
+
+### Generated workflow (with runner)
+
+```yaml
+name: Release Plugin
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install dependencies
+        run: npm install
+      - name: Build renderer bundle
+        run: node build.mjs
+      - name: Build runner bundle
+        run: node build-runner.mjs
+      - name: Package zip
+        run: node zip.mjs
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/my-plugin.zip
+            manifest.json
+            src/skill.md
+            dist/runner.js
+```
+
+> The workflow requires `permissions: contents: write` so it can create the GitHub Release. This is granted by default to `GITHUB_TOKEN` in public repos. For private repos, check your repository's Actions settings.
+
+### Why `runner.js` must be in the release
+
+The `voiden-runner` CLI finds your plugin's runner by looking for a release asset named **exactly `runner.js`** in your plugin's GitHub repo. If this asset is missing or misnamed, `voiden-runner plugin install {id}` will fail to install the headless runner. The generated CI workflow handles this naming automatically.
 
 ---
 

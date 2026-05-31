@@ -359,6 +359,68 @@ dist/
 *.tsbuildinfo
 `);
 
+// ── .github/workflows/release.yml ────────────────────────────────────────────
+// Triggered by pushing a version tag (e.g. git tag v1.0.0 && git push --tags).
+// Builds all artifacts, creates a GitHub Release, and uploads:
+//   • dist/{id}.zip        → installable in Voiden via Extensions → Install from file
+//   • dist/runner.js       → consumed by `voiden-runner plugin install {id}` (if runner)
+//   • manifest.json        → displayed in Extensions browser
+//   • src/skill.md         → AI skill description (if present)
+
+const releaseFiles = [
+  `dist/${id}.zip`,
+  'manifest.json',
+  'src/skill.md',
+  ...(hasRunner ? ['dist/runner.js'] : []),
+].map(f => `            ${f}`).join('\n');
+
+write(join(dir, '.github', 'workflows', 'release.yml'), `name: Release Plugin
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build renderer bundle
+        run: node build.mjs
+${hasMainProcess ? `
+      - name: Build main-process bundle
+        run: node build-main.mjs
+` : ''}${hasRunner ? `
+      - name: Build runner bundle
+        # Output: dist/runner.js
+        # voiden-runner looks for a release asset named exactly "runner.js"
+        # when a user runs: voiden-runner plugin install ${id}
+        run: node build-runner.mjs
+` : ''}
+      - name: Package zip
+        # Output: dist/${id}.zip
+        # Install in Voiden: Extensions → ⋯ → Install from file
+        run: node zip.mjs
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+${releaseFiles}
+`);
+
 // ── generate-manifest.mjs ─────────────────────────────────────────────────────
 
 write(join(dir, 'generate-manifest.mjs'), `#!/usr/bin/env node
