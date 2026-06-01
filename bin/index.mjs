@@ -118,23 +118,13 @@ const identity = await prompts([
   },
 ], { onCancel });
 
-// ── Step 2: capabilities ─────────────────────────────────────────────────────
+// ── Step 2: optional extras ───────────────────────────────────────────────────
 
-const { caps } = await prompts({
-  type: 'multiselect',
-  name: 'caps',
-  message: 'Select capabilities',
-  choices: [
-    { title: 'Blocks (TipTap nodes)',    value: 'blocks'          },
-    { title: 'Request pipeline hooks',   value: 'requestPipeline' },
-    { title: 'Slash commands',           value: 'slashCommands'   },
-    { title: 'Sidebar tab',              value: 'sidebar'         },
-    { title: 'Paste handler',            value: 'paste'           },
-    { title: 'Runner (voiden-runner CLI headless support)', value: 'runner' },
-    { title: 'Main process (Electron)',  value: 'mainProcess'     },
-  ],
-  hint: '- Space to select, Enter to confirm',
-}, { onCancel });
+console.log('\n  Optional extras:');
+const extras = await prompts([
+  { type: 'toggle', name: 'runner',      message: 'Runner — voiden-runner CLI headless support', initial: false, active: 'yes', inactive: 'no' },
+  { type: 'toggle', name: 'mainProcess', message: 'Main process — Electron IPC handlers',        initial: false, active: 'yes', inactive: 'no' },
+], { onCancel });
 
 // ── Step 3: permissions ──────────────────────────────────────────────────────
 //
@@ -142,60 +132,23 @@ const { caps } = await prompts({
 // in manifest.json — the host app enforces them at call time.
 // Maps 1-to-1 with the PluginPermission type in @voiden/sdk/shared.
 
-const { permissions } = await prompts({
-  type: 'multiselect',
-  name: 'permissions',
-  message: 'Select permissions your plugin needs',
-  choices: PERMISSIONS.map((p) => ({
-    title: p.title,
-    value: p.value,
-    description: p.description,
+console.log('\n  Permissions — gate specific context APIs (enable all you need):');
+const permToggles = await prompts(
+  PERMISSIONS.map((p) => ({
+    type: 'toggle',
+    name: p.value,
+    message: `${p.title}`,
+    initial: false,
+    active: 'yes',
+    inactive: 'no',
   })),
-  hint: '- Space to select, Enter to confirm. Leave empty if no gated APIs are used.',
-}, { onCancel });
+  { onCancel },
+);
+const permissions = Object.entries(permToggles).filter(([, v]) => v).map(([k]) => k);
 
 // ── Step 4: capability-specific details ──────────────────────────────────────
 
-let blockNames = [];
-if (caps.includes('blocks')) {
-  const { raw } = await prompts({
-    type: 'text',
-    name: 'raw',
-    message: 'Block type names (comma-separated, e.g. my-node,my-node-body)',
-    validate: (v) => v.trim().length > 0 || 'Required',
-  }, { onCancel });
-  blockNames = raw.split(',').map((s) => s.trim()).filter(Boolean).map(toKebab);
-}
-
-let slashGroups = [];
-if (caps.includes('slashCommands')) {
-  const { groupName } = await prompts({
-    type: 'text',
-    name: 'groupName',
-    message: 'Slash command group name',
-    initial: identity.id,
-  }, { onCancel });
-  const { rawCmds } = await prompts({
-    type: 'text',
-    name: 'rawCmds',
-    message: 'Command labels (comma-separated)',
-    initial: `Insert ${identity.name}`,
-  }, { onCancel });
-  slashGroups = [{ name: groupName, commands: rawCmds.split(',').map((s) => s.trim()) }];
-}
-
-let sidebarSide = 'right';
-if (caps.includes('sidebar')) {
-  const { side } = await prompts({
-    type: 'select',
-    name: 'side',
-    message: 'Sidebar side',
-    choices: [{ title: 'Right', value: 'right' }, { title: 'Left', value: 'left' }],
-  }, { onCancel });
-  sidebarSide = side;
-}
-
-// ── Step 5: output dir ────────────────────────────────────────────────────────
+// ── Step 3: output dir ────────────────────────────────────────────────────────
 
 const { outDir } = await prompts({
   type: 'text',
@@ -218,13 +171,8 @@ if (existsSync(dir)) {
 // ─── Generate files ──────────────────────────────────────────────────────────
 
 const { id, name, description, author, icon, version, voidenVersion, priority } = identity;
-const hasMainProcess = caps.includes('mainProcess');
-const hasRunner      = caps.includes('runner');
-const hasBlocks = caps.includes('blocks');
-const hasPipeline = caps.includes('requestPipeline');
-const hasSlash = caps.includes('slashCommands');
-const hasSidebar = caps.includes('sidebar');
-const hasPaste = caps.includes('paste');
+const hasMainProcess = extras.mainProcess;
+const hasRunner      = extras.runner;
 const fnName = `create${toPascal(toCamel(id))}Plugin`;
 
 // Permission flags
@@ -235,30 +183,6 @@ const needsCommandPalette = permissions.includes('commandPalette');
 const needsContextMenus  = permissions.includes('contextMenus');
 
 // ── manifest.json ─────────────────────────────────────────────────────────────
-
-const capabilitiesObj = {};
-if (hasBlocks && blockNames.length > 0) {
-  capabilitiesObj.blocks = {
-    owns: blockNames,
-    allowExtensions: true,
-    description: `Owns ${blockNames.length} block type${blockNames.length > 1 ? 's' : ''}`,
-  };
-}
-if (hasPipeline) {
-  capabilitiesObj.requestPipeline = {
-    buildHandler: true,
-    responseHandler: true,
-    description: 'Registers handlers for building and processing requests',
-  };
-}
-if (hasSlash && slashGroups.length > 0) {
-  capabilitiesObj.slashCommands = {
-    groups: slashGroups.map((g) => ({ name: g.name, commands: g.commands })),
-  };
-}
-if (hasPaste) {
-  capabilitiesObj.paste = { patterns: [] };
-}
 
 const manifest = {
   id,
@@ -277,7 +201,7 @@ const manifest = {
   // from @voiden/sdk/shared. Missing a permission causes a PluginPermissionError
   // and shows an amber "Needs Permission" badge in the Extension Browser.
   permissions,
-  capabilities: capabilitiesObj,
+  capabilities: {},
   features: [],
 };
 
@@ -573,10 +497,28 @@ function shimPlugin() {
       const exports = CORE_EXPORTS[mod] || []
       const key = JSON.stringify(mod)
       const named = exports.map(n => \`export const \${n}=_s.\${n};\`).join('\\n')
-      return \`const _s=(window.__voiden_shims__||{})[\\${key}]||{};export default _s;\\n\${named}\`
+      return \`const _s=(window.__voiden_shims__||{})[\${key}]||{};export default _s;\\n\${named}\`
     },
     renderChunk(code) {
-      const mfStr = JSON.stringify(manifest)
+      const caps = {}
+      if (/registerVoidenExtension/.test(code)) {
+        const owns = []
+        const re = /\.create\(\s*\{[^}]*?name:\s*["']([^"']+)["']/g
+        let m
+        while ((m = re.exec(code)) !== null) {
+          if (!owns.includes(m[1])) owns.push(m[1])
+        }
+        caps.blocks = owns.length ? { owns } : {}
+      }
+      if (/addVoidenSlashGroup|addVoidenSlashCommand/.test(code)) caps.slashCommands = {}
+      if (/addHook\b/.test(code)) caps.requestPipeline = {}
+      if (/registerContextMenu/.test(code)) caps.contextMenus = {}
+      if (/registerTopBarItem/.test(code)) caps.topBar = {}
+      if (/registerSidebarTab/.test(code)) caps.sidebar = {}
+      if (/registerCommand\b/.test(code)) caps.commandPalette = {}
+      if (/registerHelpCommand/.test(code)) caps.help = {}
+      const finalManifest = { ...manifest, capabilities: { ...manifest.capabilities, ...caps } }
+      const mfStr = JSON.stringify(finalManifest)
       return {
         code: \`globalThis["__voiden_bundle_version__"]=2;\\nexport const __voiden_bundle_version__=2;\\nexport const __voiden_manifest__=\${mfStr};\\n\${code}\`,
         map: null,
@@ -686,37 +628,26 @@ console.log(\`Users install it with: voiden-runner plugin install \${manifest.id
 }
 
 // ── src/runner.ts (only if runner) ────────────────────────────────────────────
-// Exports a RunnerFactory — a plain Node.js module with no browser APIs.
-// voiden-runner loads this file via dynamic import() to support headless
-// execution of .void files from the CLI.
 
 if (hasRunner) {
   const runnerTs = `import type { RunnerFactory } from '@voiden/sdk/runner';
-${hasBlocks && blockNames.length > 0 ? `// Block schema mirrors the TipTap node attrs from src/plugin.ts\n` : ''}
+
 const factory: RunnerFactory = (context) => ({
   onload: async () => {
-${hasBlocks && blockNames.length > 0 ? blockNames.map((bn) => `
-    // Register block schema so voiden-runner can parse "${bn}" blocks in .void files
-    context.registerBlockSchema({
-      name: '${bn}',
-      attrs: {
-        // Mirror the attrs defined in your TipTap node in src/plugin.ts
-        // e.g. label: { default: '' },
-      },
-    });`).join('\n') + '\n' : ''}
-    // Handle how ${name} blocks are translated into an HTTP request.
-    // 'blocks' is the raw content array from the parsed .void file.
-    context.onBuildRequest(async (request, blocks) => {
-      // Find the first block owned by this plugin
-      const block = blocks.find((b) => ${hasBlocks && blockNames.length > 0 ? `b.type === '${blockNames[0]}'` : `b.type === '${id}'`});
-      if (!block) return; // not our block — pass through
+    // Register the block schema so voiden-runner can parse your blocks in .void files.
+    // Mirror the attrs defined in your TipTap Node.create() in src/plugin.ts.
+    // context.registerBlockSchema({
+    //   name: '${id}',
+    //   attrs: { label: { default: '' } },
+    // });
 
+    context.onBuildRequest(async (request, blocks) => {
+      const block = blocks.find((b) => b.type === '${id}');
+      if (!block) return;
       // Modify the request based on block attrs
-      // e.g. request.url = block.attrs?.url ?? request.url;
       return request;
     });
 
-    // Handle the response after execution (optional).
     context.onProcessResponse(async (response, blocks, request) => {
       if (context.verbose) {
         console.log(\`[${id}] \${request.method} \${request.url} → \${response.status}\`);
@@ -732,210 +663,145 @@ export default factory;
 
 // ── src/plugin.ts ─────────────────────────────────────────────────────────────
 
-const onloadLines = [];
+const needsCleanup = needsEvents;
 
-if (hasBlocks && blockNames.length > 0) {
-  blockNames.forEach((bn) => {
-    const fn = toPascal(toCamel(bn));
-    onloadLines.push(
-      ``,
-      `      // ${fn} node`,
-      `      const ${fn}Node = Node.create({`,
-      `        name: '${bn}',`,
-      `        group: 'block',`,
-      `        atom: true,`,
-      `        addAttributes() { return {}; },`,
-      `        parseHTML() { return [{ tag: 'div[data-type="${bn}"]' }]; },`,
-      `        renderHTML({ HTMLAttributes }) {`,
-      `          return ['div', mergeAttributes(HTMLAttributes, { 'data-type': '${bn}' })];`,
-      `        },`,
-      `      });`,
-      `      context.registerVoidenExtension(${fn}Node);`,
-    );
-  });
-}
+const permissionBoilerplate = [
+  needsCommandPalette ? `
+      // Permission: commandPalette
+      context.registerCommand({
+        id: '${id}.example-command',
+        label: '${name}: Example Command',
+        description: 'Replace this with your command description',
+        action: () => {
+          context.ui.showToast?.('${name} command executed', 'info');
+        },
+      });` : '',
 
-if (hasPipeline) {
-  onloadLines.push(
-    ``,
-    `      context.onBuildRequest(async (request, editor) => {`,
-    `        // Inspect editor.getJSON() and build the request object`,
-    `        return request;`,
-    `      });`,
-    ``,
-    `      context.onProcessResponse(async (response) => {`,
-    `        // Handle response — open a tab or process data`,
-    `        // await context.openVoidenTab('Response', responseDoc, { readOnly: true });`,
-    `      });`,
-  );
-}
+  needsContextMenus ? `
+      // Permission: contextMenus
+      context.registerContextMenu({
+        id: '${id}.tab-action',
+        label: '${name}: Tab Action',
+        surface: 'tab',
+        action: (tab) => {
+          console.log('${name} tab action on', tab);
+        },
+      });` : '',
 
-if (hasSlash && slashGroups.length > 0) {
-  const g = slashGroups[0];
-  const cmds = g.commands.map((label) => {
-    const cmdId = toKebab(label);
-    return [
-      `          {`,
-      `            name: '${cmdId}',`,
-      `            label: '${label}',`,
-      `            slash: '/${cmdId}',`,
-      `            description: '${label}',`,
-      `            action: (editor) => {`,
-      `              editor?.chain().focus().insertContent({ type: '${blockNames[0] ?? id}' }).run();`,
-      `            },`,
-      `          },`,
-    ].join('\n');
-  }).join('\n');
+  needsEvents ? `
+      // Permission: events
+      const unsubTab = context.events.on('tab:changed', ({ tabId, title }) => {
+        console.log('${name}: tab changed to', title, tabId);
+      });
+      cleanupFns.push(unsubTab);` : '',
 
-  onloadLines.push(
-    ``,
-    `      context.addVoidenSlashGroup({`,
-    `        name: '${g.name}',`,
-    `        title: '${name}',`,
-    `        commands: [`,
-    cmds,
-    `        ],`,
-    `      });`,
-  );
-}
+  needsFilesystem ? `
+      // Permission: filesystem
+      // const content = await context.fs.read('config.json');
+      // await context.fs.write('output.txt', 'hello');
+      // const entries = await context.fs.list();` : '',
 
-if (hasSidebar) {
-  onloadLines.push(
-    ``,
-    `      const SidebarView = () => React.createElement('div', { style: { padding: 16 } }, '${name} sidebar');`,
-    ``,
-    `      context.registerSidebarTab('${sidebarSide}', {`,
-    `        id: '${id}',`,
-    `        title: '${name}',`,
-    `        icon: null,`,
-    `        component: SidebarView,`,
-    `      });`,
-  );
-}
+  needsSettings ? `
+      // Permission: settings
+      // const value = await context.settings.get<string>('my-key');
+      // await context.settings.set('my-key', 'value');
 
-if (hasPaste) {
-  onloadLines.push(
-    ``,
-    `      // context.registerPasteHandler({`,
-    `      //   pattern: /your-pattern/,`,
-    `      //   transform: async (text) => ({ type: '${blockNames[0] ?? id}', attrs: { body: text } }),`,
-    `      // });`,
-  );
-}
-
-if (hasMainProcess) {
-  onloadLines.push(
-    ``,
-    `      // Main-process IPC handlers are registered in src/main-process.ts`,
-  );
-}
-
-// ── Permission-specific boilerplate ──────────────────────────────────────────
-// Each block is only emitted when the user selected the corresponding permission.
-// The APIs used here match @voiden/sdk PluginContext exactly.
-
-if (needsCommandPalette) {
-  onloadLines.push(
-    ``,
-    `      // Permission: commandPalette — register a command palette entry`,
-    `      context.registerCommand({`,
-    `        id: '${id}.example-command',`,
-    `        label: '${name}: Example Command',`,
-    `        description: 'Replace this with your command description',`,
-    `        action: () => {`,
-    `          context.ui.showToast?.('${name} command executed', 'info');`,
-    `        },`,
-    `      });`,
-  );
-}
-
-if (needsContextMenus) {
-  onloadLines.push(
-    ``,
-    `      // Permission: contextMenus — add a tab context menu item`,
-    `      context.registerContextMenu({`,
-    `        id: '${id}.tab-action',`,
-    `        label: '${name}: Tab Action',`,
-    `        surface: 'tab',`,
-    `        when: (tab) => tab.type === 'document',`,
-    `        action: (tab) => {`,
-    `          console.log('${name} tab action on', tab);`,
-    `        },`,
-    `      });`,
-  );
-}
-
-if (needsEvents) {
-  onloadLines.push(
-    ``,
-    `      // Permission: events — subscribe to workspace lifecycle events`,
-    `      // Supported: tab:changed, file:saved, project:changed, environment:changed,`,
-    `      //            request:sent, response:received`,
-    `      const unsubTab = context.events.on('tab:changed', ({ tabId, title }) => {`,
-    `        console.log('${name}: tab changed to', title, tabId);`,
-    `      });`,
-    ``,
-    `      // Store unsubscribers so onunload can clean up`,
-    `      cleanupFns.push(unsubTab);`,
-  );
-}
-
-if (needsFilesystem) {
-  onloadLines.push(
-    ``,
-    `      // Permission: filesystem — read/write files relative to the active project root`,
-    `      // const content = await context.fs.read('config.json');`,
-    `      // await context.fs.write('output.txt', 'hello');`,
-    `      // const entries = await context.fs.list();`,
-  );
-}
-
-if (needsSettings) {
-  onloadLines.push(
-    ``,
-    `      // Permission: settings — persistent per-plugin settings (plain JSON)`,
-    `      // const value = await context.settings.get<string>('my-key');`,
-    `      // await context.settings.set('my-key', 'value');`,
-    `      // const unsub = context.settings.onChange((key, val) => console.log(key, val));`,
-    `      // cleanupFns.push(unsub);`,
-    ``,
-    `      // Register a settings page section (requires 'settings' permission).`,
-    `      // Only text, number, select, and toggle fields are supported.`,
-    `      // Values are persisted automatically — no need to call settings.set manually.`,
-    `      // context.ui.registerSettings({`,
-    `      //   id: '${id}-settings',`,
-    `      //   title: '${name} Settings',`,
-    `      //   fields: [`,
-    `      //     { type: 'toggle', key: 'enabled', label: 'Enable feature', defaultValue: true },`,
-    `      //     { type: 'text',   key: 'apiKey',  label: 'API Key', placeholder: 'sk-...' },`,
-    `      //     { type: 'number', key: 'timeout', label: 'Timeout (ms)', defaultValue: 5000, min: 0 },`,
-    `      //     { type: 'select', key: 'mode',    label: 'Mode',`,
-    `      //       options: [{ label: 'Fast', value: 'fast' }, { label: 'Accurate', value: 'accurate' }],`,
-    `      //       defaultValue: 'fast' },`,
-    `      //   ],`,
-    `      // });`,
-  );
-}
-
-const blockImports = hasBlocks
-  ? `import { Node, mergeAttributes } from '@tiptap/core';\n`
-  : '';
-const sidebarImport = hasSidebar ? `import React from 'react';\n` : '';
-const needsCleanup = needsEvents || needsSettings;
+      // context.ui.registerSettings({
+      //   id: '${id}-settings',
+      //   title: '${name} Settings',
+      //   fields: [
+      //     { type: 'toggle', key: 'enabled', label: 'Enable feature', defaultValue: true },
+      //     { type: 'text',   key: 'apiKey',  label: 'API Key', placeholder: 'sk-...' },
+      //     { type: 'number', key: 'timeout', label: 'Timeout (ms)', defaultValue: 5000, min: 0 },
+      //     { type: 'select', key: 'mode',    label: 'Mode',
+      //       options: [{ label: 'Fast', value: 'fast' }, { label: 'Accurate', value: 'accurate' }],
+      //       defaultValue: 'fast' },
+      //   ],
+      // });` : '',
+].filter(Boolean).join('\n');
 
 const pluginTs = `import type { CorePluginContext } from '@voiden/sdk/ui';
-${blockImports}${sidebarImport}import manifest from '../manifest.json';
+// import { Node, mergeAttributes } from '@tiptap/core'; // uncomment if using custom blocks
+// import React from 'react';                            // uncomment if using sidebar
+import manifest from '../manifest.json';
 
 type PluginContext = CorePluginContext;
 
 export default function ${fnName}(context: PluginContext) {
+  const cleanupFns: Array<() => void> = [];
+
   return {
     onload: async () => {
-${needsCleanup ? `      const cleanupFns: Array<() => void> = [];\n` : ''}${onloadLines.join('\n')}
+
+      // ── Custom TipTap block node ──────────────────────────────────────────
+      // const MyNode = Node.create({
+      //   name: '${id}',
+      //   group: 'block',
+      //   atom: true,
+      //   addAttributes() { return { label: { default: '' } }; },
+      //   parseHTML() { return [{ tag: 'div[data-type="${id}"]' }]; },
+      //   renderHTML({ HTMLAttributes }) {
+      //     return ['div', mergeAttributes(HTMLAttributes, { 'data-type': '${id}' })];
+      //   },
+      // });
+      // context.registerVoidenExtension(MyNode);
+
+      // ── Slash command ─────────────────────────────────────────────────────
+      // context.addVoidenSlashGroup({
+      //   name: '${id}',
+      //   title: '${name}',
+      //   commands: [{
+      //     name: '${id}',
+      //     label: 'Insert ${name}',
+      //     slash: '/${id}',
+      //     description: 'Insert a ${name} block',
+      //     action: (editor) => editor?.chain().focus().insertContent({ type: '${id}' }).run(),
+      //   }],
+      // });
+
+      // ── Sidebar tab ───────────────────────────────────────────────────────
+      // const SidebarView = () => React.createElement('div', { style: { padding: 16 } }, '${name}');
+      // context.registerSidebarTab('right', { id: '${id}', title: '${name}', icon: null, component: SidebarView });
+
+      // ── Top bar button ────────────────────────────────────────────────────
+      // context.registerTopBarItem({ id: '${id}.topbar', icon: MyIcon, tooltip: '${name}', position: 'right', onClick: () => {} });
+
+      // ── Request pipeline ──────────────────────────────────────────────────
+      // Hooks run in order: PreProcessing → RequestCompilation → PreSend → PostProcessing
+      //
+      // Stage 1 — PreProcessing  { editor, requestState, cancel }
+      //   Validate or cancel before the request is built. editor is available here.
+      // context.pipeline.addHook(PipelineStage.PreProcessing, ({ editor, requestState, cancel }) => {
+      //   if (!requestState.url) cancel(); // abort if no URL
+      // });
+      //
+      // Stage 2 — RequestCompilation  { editor, requestState, addHeader, addQueryParam }
+      //   Compile editor content into the request. editor is available here.
+      //   addHeader / addQueryParam are convenience helpers that push into requestState.
+      // context.pipeline.addHook(PipelineStage.RequestCompilation, ({ editor, requestState, addHeader, addQueryParam }) => {
+      //   addHeader('X-Plugin-Id', '${id}');
+      //   addQueryParam('source', '${id}');
+      // });
+      //
+      // Stage 3 — PreSend  { requestState, metadata }
+      //   Last chance to modify the request before it is sent. No editor here.
+      // context.pipeline.addHook(PipelineStage.PreSend, ({ requestState, metadata }) => {
+      //   metadata.sentAt = Date.now();
+      //   requestState.headers.push({ key: 'X-Sent-By', value: '${id}', enabled: true });
+      // });
+      //
+      // Stage 4 — PostProcessing  { requestState, responseState, metadata }
+      //   Inspect or transform the response after it is received. No editor here.
+      // context.pipeline.addHook(PipelineStage.PostProcessing, ({ requestState, responseState, metadata }) => {
+      //   const duration = Date.now() - (metadata.sentAt ?? 0);
+      //   console.log(\`[${id}] \${requestState.method} → \${responseState.status} (\${duration}ms)\`);
+      // });
+${permissionBoilerplate}
     },
 
     onunload: async () => {
-${needsCleanup ? `      // Call all cleanup functions registered during onload\n      cleanupFns.forEach((fn) => fn());\n` : ''}    },
+      cleanupFns.forEach((fn) => fn());
+    },
 
     metadata: manifest,
   };
@@ -964,11 +830,8 @@ export function register() {
 // ── src/skill.md ──────────────────────────────────────────────────────────────
 
 const skillLines = [`# ${name}`, ``, description, ``];
-if (hasBlocks) skillLines.push(`- Registers block types: ${blockNames.join(', ')}`);
-if (hasPipeline) skillLines.push(`- Hooks into the request pipeline (build & response)`);
-if (hasSlash) skillLines.push(`- Adds slash commands: ${slashGroups.flatMap((g) => g.commands).join(', ')}`);
-if (hasSidebar) skillLines.push(`- Adds a ${sidebarSide} sidebar tab`);
 if (permissions.length > 0) skillLines.push(`- Permissions: ${permissions.join(', ')}`);
+skillLines.push(`- See src/plugin.ts for registered capabilities`);
 write(join(dir, 'src', 'skill.md'), skillLines.join('\n') + '\n');
 
 // ─── Done ─────────────────────────────────────────────────────────────────────
