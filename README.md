@@ -116,16 +116,7 @@ The single source of truth for your plugin. Voiden reads this file when loading 
   "readme": "Shown in the Extensions browser",
   "mainProcess": false,
   "permissions": ["filesystem", "events"],
-  "capabilities": {
-    "blocks": {
-      "owns": ["my-block"],
-      "allowExtensions": true,
-      "description": "Owns the my-block block type"
-    },
-    "slashCommands": {
-      "groups": [{ "name": "my-plugin", "commands": ["Insert My Block"] }]
-    }
-  },
+  "capabilities": {},
   "features": []
 }
 ```
@@ -140,8 +131,7 @@ The single source of truth for your plugin. Voiden reads this file when loading 
 | `priority` | Load order relative to other plugins. Lower numbers load first. Range: 1–99. Core extensions use 10–25. Use 30+ for community plugins. |
 | `mainProcess` | Set to `true` only if your plugin registers Electron IPC handlers. Requires a separate `build-main.mjs` bundle. |
 | `permissions` | Array of permission strings your plugin needs. See [Permissions System](#permissions-system). |
-| `capabilities.blocks.owns` | Block type names (TipTap node names) your plugin registers and owns. |
-| `capabilities.slashCommands.groups` | Slash command groups your plugin exposes in the editor. |
+| `capabilities` | Auto-populated at build time — do not edit manually. See [Capabilities](#capabilities). |
 
 ---
 
@@ -324,8 +314,9 @@ TypeScript config pre-set for Voiden plugins:
 | **Initial version** | SemVer starting version. Default: `1.0.0` |
 | **Minimum Voiden version** | Semver range. Default: `>=2.0.0` |
 | **Load priority** | Integer. Lower = loads earlier. Use `30` unless you need to load before or after a specific plugin |
-| **Capabilities** | Multi-select. See [Capabilities](#capabilities) |
-| **Permissions** | Multi-select. See [Permissions System](#permissions-system) |
+| **Runner** | Yes/No — generates `src/runner.ts` and `build-runner.mjs` for `voiden-runner` CLI support |
+| **Main process** | Yes/No — generates `src/main-process.ts` and `build-main.mjs` for Electron IPC handlers |
+| **Permissions** | Yes/No per permission — see [Permissions System](#permissions-system) |
 | **Output directory** | Where to generate the project. Default: `./{id}` |
 
 ---
@@ -348,17 +339,22 @@ All paths passed to `context.fs.*` are relative to the active project root. Ther
 
 ## Capabilities
 
-Capabilities describe what your plugin contributes to the editor. They are declared in `manifest.json` under `capabilities` and affect how the host app handles your plugin.
+Capabilities describe what your plugin contributes to the editor. They are stored in `manifest.json` under `capabilities` and displayed in the Extensions browser.
 
-| Capability | What it adds | Key API |
+**You do not declare capabilities manually.** The build script (`build.mjs`) automatically detects them at build time by scanning the compiled bundle and injects the correct `capabilities` block into the manifest. No configuration needed.
+
+| Capability | Detected when your plugin calls | Shown in Extensions browser as |
 |---|---|---|
-| **Blocks (TipTap nodes)** | Custom block types that can be inserted into `.void` files | `context.registerVoidenExtension(Node)` |
-| **Request pipeline hooks** | Intercept and transform HTTP requests before they are sent, and process responses | `context.onBuildRequest()`, `context.onProcessResponse()` |
-| **Slash commands** | `/command` entries in the editor slash menu | `context.addVoidenSlashGroup()` |
-| **Sidebar tab** | A panel tab in the left or right sidebar | `context.registerSidebarTab()` |
-| **Paste handler** | Transform pasted text into a block (e.g. paste a curl command → HTTP request block) | `context.paste.registerBlockOwner()` |
-| **Runner** | Headless support — lets your plugin work with the `voiden-runner` CLI | `RunnerFactory` in `src/runner.ts` |
-| **Main process (Electron)** | Node.js IPC handlers for OS-level operations | `ipcMain.handle()` in `src/main-process.ts` |
+| `blocks` | `context.registerVoidenExtension()` | Block types the plugin owns |
+| `slashCommands` | `context.addVoidenSlashGroup()` or `context.addVoidenSlashCommand()` | Slash command groups |
+| `requestPipeline` | `context.pipeline.addHook()` | Pipeline hooks |
+| `contextMenus` | `context.registerContextMenu()` | Context menu items |
+| `topBar` | `context.registerTopBarItem()` | Top bar buttons |
+| `sidebar` | `context.registerSidebarTab()` | Sidebar tabs |
+| `commandPalette` | `context.registerCommand()` | Command palette entries |
+| `help` | `context.registerHelpCommand()` | Help commands |
+
+For `blocks`, the build script also extracts the node names from `Node.create({ name: '...' })` calls and populates `capabilities.blocks.owns` automatically.
 
 ---
 
@@ -659,12 +655,12 @@ GitHub Actions picks up the `v*` tag, runs the full build, and creates a GitHub 
 3. **Builds the renderer bundle** — `node build.mjs` → `dist/{id}.js`
 4. **Builds the main-process bundle** — `node build-main.mjs` → `dist/{id}-main.cjs` *(only if mainProcess selected)*
 5. **Builds the runner bundle** — `node build-runner.mjs` → `dist/runner.js` *(only if runner selected)*
-6. **Packages the zip** — `node zip.mjs` → `dist/{id}.zip`
-7. **Creates a GitHub Release** and uploads:
-   - `dist/{id}.zip` — installable in Voiden via Extensions → Install from file
+6. **Creates a GitHub Release** and uploads:
    - `manifest.json` — displayed in the Extensions browser
    - `src/skill.md` — AI skill description
    - `dist/runner.js` — consumed by `voiden-runner plugin install {id}` *(only if runner selected)*
+
+> **The zip is not uploaded as a release asset.** It is for local testing only — use `npm run zip` to build it and install via Extensions → Install from file. Distributing via zip on GitHub releases is not the intended release mechanism.
 
 ### Generated workflow (with runner)
 
@@ -693,13 +689,10 @@ jobs:
         run: node build.mjs
       - name: Build runner bundle
         run: node build-runner.mjs
-      - name: Package zip
-        run: node zip.mjs
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            dist/my-plugin.zip
             manifest.json
             src/skill.md
             dist/runner.js
@@ -724,11 +717,11 @@ The `voiden-runner` CLI finds your plugin's runner by looking for a release asse
 3. **Add a new block type:**
    - Define a TipTap `Node` in `src/plugin.ts`
    - Call `context.registerVoidenExtension(YourNode)`
-   - Add the block name to `capabilities.blocks.owns` in `manifest.json`
+   - Capabilities are auto-detected at build time — no manifest changes needed
 
 4. **Add a slash command:**
    - Call `context.addVoidenSlashGroup(...)` in `onload`
-   - Add it to `capabilities.slashCommands.groups` in `manifest.json`
+   - Capabilities are auto-detected at build time — no manifest changes needed
 
 5. **Add a sidebar panel:**
    - Write a React component in `src/plugin.ts` (or a separate file in `src/`)
