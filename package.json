@@ -11,7 +11,7 @@
     "access": "public"
   },
   "bin": {
-    "create-voiden-plugin": "./bin/index.mjs"
+    "create-voiden-plugin": "./bin/index.js"
   },
   "repository": {
     "type": "git",
