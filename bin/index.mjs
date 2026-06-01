@@ -240,7 +240,7 @@ const pkgJson = {
       'node build.mjs',
       hasMainProcess ? '&& node build-main.mjs' : '',
       hasRunner      ? '&& node build-runner.mjs' : '',
-      '&& node zip.mjs && node generate-manifest.mjs',
+      '&& node generate-manifest.mjs',
     ].filter(Boolean).join(' '),
   },
   peerDependencies: {
