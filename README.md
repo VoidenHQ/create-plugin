@@ -127,7 +127,7 @@ The single source of truth for your plugin. Voiden reads this file when loading 
 | `name` | Display name shown in the Extensions browser and sidebar. |
 | `version` | SemVer string. Bump this before publishing a new release. |
 | `voidenVersion` | Minimum Voiden app version required. Use `>=2.0.0` for all current features. |
-| `icon` | Any [lucide-react](https://lucide.dev) icon name (e.g. `"Zap"`, `"Plug"`, `"Star"`). |
+| `icon` | A URL to an image shown in the Extensions browser (e.g. a hosted PNG or SVG). Leave blank for a default icon. |
 | `priority` | Load order relative to other plugins. Lower numbers load first. Range: 1–99. Core extensions use 10–25. Use 30+ for community plugins. |
 | `mainProcess` | Set to `true` only if your plugin registers Electron IPC handlers. Requires a separate `build-main.mjs` bundle. |
 | `permissions` | Array of permission strings your plugin needs. See [Permissions System](#permissions-system). |
@@ -281,10 +281,11 @@ Standard npm package file. Key scripts:
 |---|---|
 | `npm run build` | Compile renderer bundle via Vite → `dist/{id}.js` |
 | `npm run build:main` | Compile main-process bundle via esbuild → `dist/{id}-main.cjs` *(only if mainProcess)* |
-| `npm run zip` | Package `dist/` into `dist/{id}.zip` |
-| `npm run release` | Run build (+ build:main if applicable), zip, and validate manifest in one shot |
+| `npm run build:runner` | Compile runner bundle via esbuild → `dist/runner.js` *(only if runner)* |
+| `npm run zip` | Package `dist/` into `dist/{id}.zip` for local testing only |
+| `npm run release` | Build all bundles and validate manifest — used before tagging a release |
 
-The package name is `@voiden/plugin-{id}`. If you plan to publish to npm for others to install, keep this name.
+The package name is `@voiden/plugin-{id}`. This naming is used by the Voiden registry to identify your plugin.
 
 ---
 
@@ -310,7 +311,7 @@ TypeScript config pre-set for Voiden plugins:
 | **Plugin ID** | Kebab-case unique identifier, auto-derived from the name. Must start with a letter and contain only `a-z`, `0-9`, `-` (e.g. `my-http-formatter`) |
 | **Description** | One-line description shown in the Extensions browser |
 | **Author** | Your name or team name |
-| **Icon** | A [lucide-react](https://lucide.dev/icons) icon name (e.g. `Zap`, `Globe`, `Code2`). Leave blank for no icon |
+| **Icon** | A URL to an image shown in the Extensions browser (e.g. a hosted PNG/SVG). Leave blank for a default icon |
 | **Initial version** | SemVer starting version. Default: `1.0.0` |
 | **Minimum Voiden version** | Semver range. Default: `>=2.0.0` |
 | **Load priority** | Integer. Lower = loads earlier. Use `30` unless you need to load before or after a specific plugin |
@@ -596,7 +597,7 @@ Publish `dist/runner.js` as a GitHub release asset **named exactly `runner.js`**
 voiden-runner plugin install {your-plugin-id}
 ```
 
-> Your plugin must also be listed in the [VoidenHQ/plugins](https://github.com/VoidenHQ/plugins) `extensions.json` catalogue before users can discover and install it via `voiden-runner`.
+> Your plugin must also be listed in the [VoidenHQ/plugin-registry](https://github.com/VoidenHQ/plugin-registry) `extensions.json` before users can discover and install it via `voiden-runner`. See [Publishing Your Plugin](#publishing-your-plugin).
 
 ### Key rule: keep `src/runner.ts` free of browser APIs
 
@@ -606,32 +607,30 @@ voiden-runner plugin install {your-plugin-id}
 
 ## Build, Zip, and Install Workflow
 
-```
-┌─────────────┐    npm run build     ┌──────────────────────┐
-│ src/plugin.ts│ ─────────────────▶  │ dist/my-plugin.js    │
-└─────────────┘                      └──────────┬───────────┘
-                                                │
-                                    npm run zip │
-                                                ▼
-                                     ┌─────────────────────┐
-                                     │ dist/my-plugin.zip  │
-                                     │   main.js           │
-                                     │   manifest.json     │
-                                     │   skill.md          │
-                                     └──────────┬──────────┘
-                                                │
-                                  Voiden: Extensions → Install from file
-                                                │
-                                                ▼
-                                     Plugin active in Voiden ✓
-```
+There are two separate flows — one for local development/testing, one for releasing.
 
-Use `npm run release` to do all steps in one command:
+### Local testing
 
 ```bash
-npm run release
-# → build → zip → validate manifest
+npm run build       # compile src/plugin.ts → dist/{id}.js
+npm run zip         # package into dist/{id}.zip (local use only)
 ```
+
+Then in Voiden: **Extensions → ⋯ → Install from file → `dist/{id}.zip`**
+
+The zip contains `main.js`, `manifest.json`, and `skill.md` — everything Voiden needs to load the plugin locally.
+
+### Releasing
+
+```bash
+npm run release     # build all bundles + validate manifest
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+The `release` script builds everything and validates the manifest but does **not** create a zip. GitHub Actions handles the actual release when you push a tag — it builds, creates the GitHub Release, and uploads the assets automatically.
+
+> The zip is intentionally excluded from GitHub releases. It is a local development tool only.
 
 ---
 
@@ -759,20 +758,43 @@ Extensions → ⋯ → Install from file → dist/my-plugin.zip
 
 Voiden extracts the zip, reads `manifest.json`, and loads the plugin. No restart required.
 
-### Publish to the Voiden registry *(coming soon)*
+### Submit to the Voiden registry
 
-The public Voiden plugin registry will allow users to discover and install your plugin directly from the Extensions browser. Documentation will be added here when the registry opens.
+To make your plugin discoverable and installable by other Voiden users through the Extensions browser, submit a pull request to [VoidenHQ/plugin-registry](https://github.com/VoidenHQ/plugin-registry).
 
-### Publish to npm
+**Before you submit:**
+- Your plugin repo must be **public** on GitHub
+- Push at least one tagged release (e.g. `v1.0.0`) with the built assets attached — `manifest.json`, `dist/{id}.js`, and `src/skill.md`
 
-If you want developers to be able to install the source via npm:
+**How to submit:**
 
-```bash
-npm login
-npm publish --access public
+1. Fork [VoidenHQ/plugin-registry](https://github.com/VoidenHQ/plugin-registry)
+2. Open `extensions.json` and add your entry to the array:
+
+```json
+{
+  "type": "community",
+  "id": "my-plugin",
+  "repo": "your-github-username/my-plugin-repo",
+  "name": "My Plugin",
+  "description": "One-line description shown in the Extensions browser.",
+  "version": "1.0.0",
+  "author": "Your Name",
+  "priority": 30,
+  "bundled": false,
+  "voidenVersion": ">=2.0.0",
+  "mainProcess": false,
+  "capabilities": {},
+  "features": [
+    "Feature one",
+    "Feature two"
+  ]
+}
 ```
 
-The package will be available as `@voiden/plugin-{your-id}`.
+3. Open a pull request — the Voiden team will review and merge once everything looks good.
+
+> The `capabilities` field in the registry entry is populated from your built manifest. Run `npm run release` locally first so `manifest.json` is up to date, then copy the `capabilities` value into your registry entry.
 
 ---
 
