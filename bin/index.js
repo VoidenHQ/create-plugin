@@ -481,7 +481,7 @@ function shimPlugin() {
     name: 'voiden-shims',
     enforce: 'pre',
     resolveId(id) {
-      if (id in STATIC_SHIMS) return \`\\0shim:\${id}\`
+      if (id in STATIC_SHIMS) return { id: \`\\0shim:\${id}\`, syntheticNamedExports: 'default' }
       if (id in CORE_EXPORTS) return \`\\0shim:\${id}\`
       return null
     },
