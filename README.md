@@ -110,7 +110,7 @@ The single source of truth for your plugin. Voiden reads this file when loading 
   "version": "1.0.0",
   "voidenVersion": ">=2.0.0",
   "author": "Your Name",
-  "icon": "Plug",
+  "icon": "https://your-cdn.com/my-plugin-icon.png",
   "type": "community",
   "priority": 30,
   "readme": "Shown in the Extensions browser",
