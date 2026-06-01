@@ -249,7 +249,7 @@ const pkgJson = {
     'react-dom': '^18.2.0',
   },
   devDependencies: {
-    '@voiden/sdk': '^1.0.10',
+    '@voiden/sdk': 'latest',
     esbuild: '^0.20.0',
     typescript: '^5.0.0',
     vite: '^5.0.0',
