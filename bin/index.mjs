@@ -441,6 +441,8 @@ const STATIC_SHIMS = {
   '@voiden/sdk': \`const _s=window.__voiden_shims__['@voiden/sdk']||{};export default _s;export const {PipelineStage,PluginContext,RequestCompilationContext,SlashCommandGroup,UIExtension}=_s;\`,
   '@voiden/sdk/shared': \`const _s=window.__voiden_shims__['@voiden/sdk/shared']||{};export default _s;export const {Request,RequestParam,parseCookies}=_s;\`,
   'tippy.js': \`const _s=window.__voiden_shims__['tippy.js']||{};export default _s;\`,
+  'react-markdown': \`const _s=window.__voiden_shims__['react-markdown']||{};export default _s?.default??_s;\`,
+  'remark-gfm': \`const _s=window.__voiden_shims__['remark-gfm']||{};export default _s?.default??_s;\`,
   'buffer': \`export const Buffer=globalThis.Buffer;export default{Buffer:globalThis.Buffer};\`,
 }
 
@@ -721,8 +723,7 @@ import manifest from '../manifest.json';
 type PluginContext = CorePluginContext;
 
 export default function ${fnName}(context: PluginContext) {
-  const cleanupFns: Array<() => void> = [];
-
+${needsCleanup ? '  const cleanupFns: Array<() => void> = [];' : ''}
   return {
     onload: async () => {
 
@@ -793,7 +794,7 @@ ${permissionBoilerplate}
     },
 
     onunload: async () => {
-      cleanupFns.forEach((fn) => fn());
+      ${needsCleanup ? 'cleanupFns.forEach((fn) => fn());' : ''}
     },
 
     metadata: manifest,
