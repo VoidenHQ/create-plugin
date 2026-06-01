@@ -93,10 +93,26 @@ const identity = await prompts([
     initial: 'Voiden Team',
   },
   {
-    type: 'text',
-    name: 'icon',
-    message: 'Icon (lucide-react icon name, e.g. "Plug", "Zap") — optional',
-    initial: '',
+    type: 'select',
+    name: 'iconType',
+    message: 'Icon type',
+    choices: [
+      { title: 'None (use default Voiden icon)', value: 'none' },
+      { title: 'Lucide icon name  (e.g. Plug, Globe, Zap)', value: 'lucide' },
+      { title: 'Local image file  (PNG, SVG, JPEG — embedded in zip)', value: 'file' },
+      { title: 'URL  (hosted image)', value: 'url' },
+    ],
+    initial: 0,
+  },
+  {
+    type: (prev) => prev !== 'none' ? 'text' : null,
+    name: 'iconValue',
+    message: (prev, values) => {
+      if (values.iconType === 'lucide') return 'Lucide icon name (PascalCase, e.g. "Plug", "Globe", "Zap")';
+      if (values.iconType === 'file')   return 'Icon file path relative to project root (e.g. "src/icon.png")';
+      return 'Icon URL (e.g. https://cdn.example.com/icon.png)';
+    },
+    validate: (v) => v.trim().length > 0 || 'Required',
   },
   {
     type: 'text',
@@ -146,17 +162,9 @@ const permToggles = await prompts(
 );
 const permissions = Object.entries(permToggles).filter(([, v]) => v).map(([k]) => k);
 
-// ── Step 4: capability-specific details ──────────────────────────────────────
+// ── Output dir — always derived from plugin ID ────────────────────────────────
 
-// ── Step 3: output dir ────────────────────────────────────────────────────────
-
-const { outDir } = await prompts({
-  type: 'text',
-  name: 'outDir',
-  message: 'Output directory',
-  initial: `./${identity.id}`,
-}, { onCancel });
-
+const outDir = `./${identity.id}`;
 const dir = resolve(process.cwd(), outDir);
 if (existsSync(dir)) {
   const { ok } = await prompts({
@@ -170,7 +178,8 @@ if (existsSync(dir)) {
 
 // ─── Generate files ──────────────────────────────────────────────────────────
 
-const { id, name, description, author, icon, version, voidenVersion, priority } = identity;
+const { id, name, description, author, iconType, iconValue, version, voidenVersion, priority } = identity;
+const icon = (iconType && iconType !== 'none') ? iconValue?.trim() || undefined : undefined;
 const hasMainProcess = extras.mainProcess;
 const hasRunner      = extras.runner;
 const fnName = `create${toPascal(toCamel(id))}Plugin`;
@@ -224,6 +233,12 @@ write(join(dir, 'changelog.json'), JSON.stringify(changelog, null, 2));
 
 // ── package.json ──────────────────────────────────────────────────────────────
 
+let sdkVersion = '1.0.10';
+try {
+  const res = await fetch('https://registry.npmjs.org/@voiden/sdk/latest');
+  if (res.ok) sdkVersion = (await res.json()).version ?? sdkVersion;
+} catch { /* offline — fall back to pinned version */ }
+
 const pkgJson = {
   name: `@voiden/plugin-${id}`,
   version,
@@ -232,19 +247,18 @@ const pkgJson = {
   description,
   main: './src/plugin.ts',
   scripts: {
-    build: 'node build.mjs',
-    ...(hasMainProcess ? { 'build:main': 'node build-main.mjs' } : {}),
+    build: 'node build.mjs && node build-main.mjs',
+    'build:main': 'node build-main.mjs',
     ...(hasRunner      ? { 'build:runner': 'node build-runner.mjs' } : {}),
     zip: 'node zip.mjs',
     release: [
-      'node build.mjs',
-      hasMainProcess ? '&& node build-main.mjs' : '',
-      hasRunner      ? '&& node build-runner.mjs' : '',
+      'node build.mjs && node build-main.mjs',
+      hasRunner ? '&& node build-runner.mjs' : '',
       '&& node generate-manifest.mjs',
     ].filter(Boolean).join(' '),
   },
   peerDependencies: {
-    '@voiden/sdk': '>=1.0.10',
+    '@voiden/sdk': `>=${sdkVersion}`,
     react: '^18.2.0',
     'react-dom': '^18.2.0',
   },
@@ -294,7 +308,10 @@ dist/
 
 const releaseFiles = [
   'manifest.json',
+  'changelog.json',
+  `dist/${id}.js`,
   'src/skill.md',
+  ...(hasMainProcess ? [`dist/${id}-main.cjs`] : []),
   ...(hasRunner ? ['dist/runner.js'] : []),
 ].map(f => `            ${f}`).join('\n');
 
@@ -323,10 +340,10 @@ jobs:
 
       - name: Build renderer bundle
         run: node build.mjs
-${hasMainProcess ? `
+
       - name: Build main-process bundle
         run: node build-main.mjs
-` : ''}${hasRunner ? `
+${hasRunner ? `
       - name: Build runner bundle
         # dist/runner.js — consumed by: voiden-runner plugin install ${id}
         run: node build-runner.mjs
@@ -371,19 +388,35 @@ const staging = resolve(\`dist/__staging__\`)
 if (existsSync(staging)) rmSync(staging, { recursive: true, force: true })
 mkdirSync(staging, { recursive: true })
 
-// Required: main.js + manifest.json
-copyFileSync(mainSrc, join(staging, 'main.js'))
-copyFileSync('manifest.json', join(staging, 'manifest.json'))
+// Required: {id}.js
+copyFileSync(mainSrc, join(staging, \`\${pluginId}.js\`))
+
+// manifest.json — embed local icon files as base64 data URLs before staging
+const manifestForZip = { ...manifest }
+if (manifestForZip.icon && !manifestForZip.icon.startsWith('http') && !manifestForZip.icon.startsWith('data:')) {
+  const iconPath = resolve(manifestForZip.icon)
+  if (existsSync(iconPath)) {
+    const iconExt = iconPath.split('.').pop().toLowerCase()
+    const mime = iconExt === 'svg' ? 'image/svg+xml' : (iconExt === 'jpg' || iconExt === 'jpeg') ? 'image/jpeg' : \`image/\${iconExt}\`
+    manifestForZip.icon = \`data:\${mime};base64,\` + readFileSync(iconPath).toString('base64')
+  }
+}
+writeFileSync(join(staging, 'manifest.json'), JSON.stringify(manifestForZip, null, 2))
 
 // Optional: skill.md
 if (existsSync('src/skill.md')) {
   copyFileSync('src/skill.md', join(staging, 'skill.md'))
 }
 
-// Optional: main-process bundle
+// Optional: changelog.json
+if (existsSync('changelog.json')) {
+  copyFileSync('changelog.json', join(staging, 'changelog.json'))
+}
+
+// Optional: main-process bundle — keep exact build output name
 const mainProcessSrc = \`dist/\${pluginId}-main.cjs\`
 if (existsSync(mainProcessSrc)) {
-  copyFileSync(mainProcessSrc, join(staging, \`\${pluginId}-main.js\`))
+  copyFileSync(mainProcessSrc, join(staging, \`\${pluginId}-main.cjs\`))
 }
 
 // Create the zip
@@ -416,7 +449,10 @@ import { readFileSync, existsSync } from 'fs'
 
 const manifest = JSON.parse(readFileSync('./manifest.json', 'utf8'))
 const pluginId = manifest.id
-const entry = existsSync('./src/plugin.ts') ? './src/plugin.ts' : './src/index.ts'
+const entry = existsSync('./src/plugin.tsx') ? './src/plugin.tsx'
+  : existsSync('./src/plugin.ts') ? './src/plugin.ts'
+  : existsSync('./src/index.tsx') ? './src/index.tsx'
+  : './src/index.ts'
 
 // Packages provided by the host app at runtime via window.__voiden_shims__
 const STATIC_SHIMS = {
@@ -545,10 +581,9 @@ await build({
 })
 `);
 
-// ── build-main.mjs (only if mainProcess) ─────────────────────────────────────
+// ── build-main.mjs (always generated — skips gracefully if src/main-process.ts absent) ──
 
-if (hasMainProcess) {
-  write(join(dir, 'build-main.mjs'), `#!/usr/bin/env node
+write(join(dir, 'build-main.mjs'), `#!/usr/bin/env node
 import { build } from 'esbuild'
 import { existsSync, readFileSync } from 'fs'
 
@@ -578,7 +613,6 @@ await build({
 })
 console.log(\`Built dist/\${pluginId}-main.cjs\`)
 `);
-}
 
 // ── build-runner.mjs (only if runner) ────────────────────────────────────────
 // Builds src/runner.ts via esbuild into dist/runner.js (CJS, Node.js target).
