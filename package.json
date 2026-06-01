@@ -1,6 +1,6 @@
 {
   "name": "@voiden/create-plugin",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Scaffold a new Voiden plugin with all required config, build scripts and boilerplate",
   "type": "module",
   "license": "Apache-2.0",
@@ -25,5 +25,11 @@
     "prompts": "^2.4.2"
   },
   "author": "Phurpa Tsering <phurpa@apyhub.com>",
-  "keywords": ["voiden", "plugin", "scaffold", "create", "cli"]
+  "keywords": [
+    "voiden",
+    "plugin",
+    "scaffold",
+    "create",
+    "cli"
+  ]
 }
