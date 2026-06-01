@@ -498,7 +498,7 @@ function shimPlugin() {
       const caps = {}
       if (/registerVoidenExtension/.test(code)) {
         const owns = []
-        const re = /\.create\(\s*\{[^}]*?name:\s*["']([^"']+)["']/g
+        const re = /\\.create\\(\\s*\\{[^}]*?name:\\s*["']([^"']+)["']/g
         let m
         while ((m = re.exec(code)) !== null) {
           if (!owns.includes(m[1])) owns.push(m[1])
@@ -506,11 +506,11 @@ function shimPlugin() {
         caps.blocks = owns.length ? { owns } : {}
       }
       if (/addVoidenSlashGroup|addVoidenSlashCommand/.test(code)) caps.slashCommands = {}
-      if (/addHook\b/.test(code)) caps.requestPipeline = {}
+      if (/addHook\\b/.test(code)) caps.requestPipeline = {}
       if (/registerContextMenu/.test(code)) caps.contextMenus = {}
       if (/registerTopBarItem/.test(code)) caps.topBar = {}
       if (/registerSidebarTab/.test(code)) caps.sidebar = {}
-      if (/registerCommand\b/.test(code)) caps.commandPalette = {}
+      if (/registerCommand\\b/.test(code)) caps.commandPalette = {}
       if (/registerHelpCommand/.test(code)) caps.help = {}
       const finalManifest = { ...manifest, capabilities: { ...manifest.capabilities, ...caps } }
       const mfStr = JSON.stringify(finalManifest)
