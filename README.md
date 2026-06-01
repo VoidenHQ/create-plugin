@@ -3,7 +3,11 @@
 CLI tool for scaffolding a new [Voiden](https://voiden.app) community plugin. Generates a fully wired project with a Vite build config, JSX runtime shim, zip packager, manifest, and typed TypeScript entry point — ready to build and install in Voiden in under a minute.
 
 ```bash
-npm create @voiden/plugin
+# Recommended
+npm create @voiden/plugin my-plugin
+
+# Using npx
+npx @voiden/create-plugin my-plugin
 ```
 
 ---
@@ -38,11 +42,15 @@ npm create @voiden/plugin
 ## Quick Start
 
 ```bash
-# Scaffold a new plugin interactively
-npm create @voiden/plugin
+# Recommended — using npm create
+npm create @voiden/plugin my-plugin
 
-# Or pass the display name directly
-npm create @voiden/plugin "My Plugin"
+# Using npx (no install needed)
+npx @voiden/create-plugin my-plugin
+
+# Or run interactively without a name
+npm create @voiden/plugin
+npx @voiden/create-plugin
 ```
 
 The CLI asks a series of questions, generates the project into a new folder, and prints the next steps.
