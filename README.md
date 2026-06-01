@@ -452,13 +452,24 @@ await context.settings.delete('theme')
 const unsub = context.settings.onChange((key, value) => { ... })
 cleanupFns.push(unsub)
 
-// Register a React component in the Settings page (⚙️ → Plugins section)
+// Register a settings section in the Settings page (⚙️ → Plugins section).
+// Values are read and written automatically — no custom React component needed.
+// Supported field types: 'text' | 'number' | 'select' | 'toggle'
 context.ui.registerSettings({
   id: 'my-plugin-settings',
   title: 'My Plugin',
-  component: MySettingsPanel,
+  fields: [
+    { type: 'toggle', key: 'enabled',  label: 'Enable feature', defaultValue: true },
+    { type: 'text',   key: 'apiKey',   label: 'API Key', placeholder: 'sk-...' },
+    { type: 'number', key: 'timeout',  label: 'Timeout (ms)', defaultValue: 5000, min: 0 },
+    { type: 'select', key: 'mode',     label: 'Mode',
+      options: [{ label: 'Fast', value: 'fast' }, { label: 'Accurate', value: 'accurate' }],
+      defaultValue: 'fast' },
+  ],
 })
 ```
+
+**Where values are stored:** `~/Library/Application Support/Voiden/plugin-settings/{your-plugin-id}.json` (macOS) — one JSON file per plugin in Electron's `userData` directory.
 
 ---
 
