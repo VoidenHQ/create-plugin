@@ -1,6 +1,6 @@
 {
   "name": "@voiden/create-plugin",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "Scaffold a new Voiden plugin with all required config, build scripts and boilerplate",
   "type": "module",
   "license": "Apache-2.0",
