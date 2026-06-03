@@ -307,7 +307,7 @@ dist/
 //       and is NOT uploaded as a release asset.
 
 const releaseFiles = [
-  'manifest.json',
+  'dist/manifest.json',
   'changelog.json',
   `dist/${id}.js`,
   'src/skill.md',
@@ -356,11 +356,33 @@ ${releaseFiles}
 `);
 
 // ── generate-manifest.mjs ─────────────────────────────────────────────────────
+// Reads manifest.json, inlines any local icon file as a base64 data URL,
+// and writes the result to dist/manifest.json for the GitHub release upload.
+// This ensures community installs (which download manifest.json from the
+// release) get a self-contained icon instead of a broken relative path.
 
 write(join(dir, 'generate-manifest.mjs'), `#!/usr/bin/env node
-import { readFileSync } from 'fs'
+import { readFileSync, existsSync, mkdirSync, writeFileSync } from 'fs'
+import { resolve } from 'path'
+
 const manifest = JSON.parse(readFileSync('./manifest.json', 'utf8'))
-console.log(\`Manifest ready: \${manifest.id} v\${manifest.version}\`)
+const out = { ...manifest }
+
+if (out.icon && !out.icon.startsWith('http') && !out.icon.startsWith('data:')) {
+  const iconPath = resolve(out.icon)
+  if (existsSync(iconPath)) {
+    const ext = iconPath.split('.').pop().toLowerCase()
+    const mime = ext === 'svg' ? 'image/svg+xml' : (ext === 'jpg' || ext === 'jpeg') ? 'image/jpeg' : \`image/\${ext}\`
+    out.icon = \`data:\${mime};base64,\` + readFileSync(iconPath).toString('base64')
+    console.log(\`Inlined icon as base64 (\${mime})\`)
+  } else {
+    console.warn(\`Warning: icon file not found at \${iconPath} — icon will be missing in community installs\`)
+  }
+}
+
+mkdirSync('dist', { recursive: true })
+writeFileSync('dist/manifest.json', JSON.stringify(out, null, 2))
+console.log(\`Manifest ready: \${out.id} v\${out.version} → dist/manifest.json\`)
 `);
 
 // ── zip.mjs ───────────────────────────────────────────────────────────────────
