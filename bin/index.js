@@ -348,6 +348,10 @@ ${hasRunner ? `
         # dist/runner.js — consumed by: voiden-runner plugin install ${id}
         run: node build-runner.mjs
 ` : ''}
+      - name: Generate manifest
+        # Inlines any local icon as base64 → writes dist/manifest.json
+        run: node generate-manifest.mjs
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
