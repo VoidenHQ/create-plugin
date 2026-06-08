@@ -348,7 +348,7 @@ Standard npm package file. Key scripts:
 |---|---|
 | `npm run build` | Compile renderer bundle via Vite → `dist/{id}.js`, then compile main-process bundle via esbuild → `dist/{id}-main.cjs` (skips gracefully if `src/main-process.ts` absent) |
 | `npm run build:main` | Compile main-process bundle only → `dist/{id}-main.cjs` |
-| `npm run build:runner` | Compile runner bundle → `dist/runner.js` *(only if runner selected)* |
+| `npm run build:runner` | Compile runner bundle → `dist/{id}-runner.js` *(only if runner selected)* |
 | `npm run zip` | Package `dist/` into `dist/{id}.zip` for local testing |
 | `npm run release` | Build all bundles and validate manifest — run before tagging a release |
 
@@ -557,7 +557,7 @@ context.ui.registerSettings({
 If you select **Runner** during scaffolding, two extra files are generated:
 
 ```
-├── build-runner.mjs   ← esbuild script → dist/runner.js
+├── build-runner.mjs   ← esbuild script → dist/{id}-runner.js
 └── src/
     └── runner.ts      ← RunnerFactory (pure Node.js, no browser APIs)
 ```
@@ -566,14 +566,15 @@ If you select **Runner** during scaffolding, two extra files are generated:
 |---|---|---|
 | Context | `CorePluginContext` | `RunnerContext` |
 | Environment | Browser (Chromium) | Node.js |
-| Build output | `dist/{id}.js` (ESM, via Vite) | `dist/runner.js` (CJS, via esbuild) |
-| Distribution | Inside `.zip` | GitHub release asset `runner.js` |
+| Build output | `dist/{id}.js` (ESM, via Vite) | `dist/{id}-runner.js` (CJS, via esbuild) |
+| Distribution | Inside `.zip` | GitHub release asset `{id}-runner.js` |
 | Install method | Extensions → Install from file | `voiden-runner plugin install {id}` |
 
 ```bash
 npm run build:runner
-# → dist/runner.js
-# Publish as a GitHub release asset named exactly "runner.js"
+# → dist/{id}-runner.js
+# Publish as a GitHub release asset named exactly "{id}-runner.js"
+# (matches the naming convention used by core plugins)
 ```
 
 ---
@@ -612,7 +613,7 @@ The scaffold generates `.github/workflows/release.yml`. Triggered by pushing a v
 3. Builds the renderer bundle → `dist/{id}.js`
 4. Renames it to `dist/main.js` (required name for the GitHub release asset)
 5. Builds the main-process bundle → `dist/{id}-main.cjs` (skips gracefully if `src/main-process.ts` absent)
-6. Builds the runner bundle → `dist/runner.js` *(only if runner selected)*
+6. Builds the runner bundle → `dist/{id}-runner.js` *(only if runner selected)*
 7. Creates a GitHub Release and uploads:
 
 | Asset | Purpose |
@@ -622,7 +623,7 @@ The scaffold generates `.github/workflows/release.yml`. Triggered by pushing a v
 | `dist/{id}.js` | Renderer bundle — same filename as the build output |
 | `src/skill.md` | AI skill description |
 | `dist/{id}-main.cjs` | Main-process bundle *(only if main process selected)* |
-| `dist/runner.js` | Runner bundle *(only if runner selected)* |
+| `dist/{id}-runner.js` | Runner bundle *(only if runner selected)* — matches the core-plugin naming convention |
 
 ### How to trigger a release
 

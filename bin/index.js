@@ -300,11 +300,13 @@ dist/
 // ── .github/workflows/release.yml ────────────────────────────────────────────
 // Triggered by pushing a version tag (e.g. git tag v1.0.0 && git push --tags).
 // Builds all artifacts, creates a GitHub Release, and uploads:
-//   • dist/runner.js       → consumed by `voiden-runner plugin install {id}` (if runner)
+//   • dist/{id}-runner.js  → consumed by `voiden-runner plugin install {id}` (if runner)
 //   • manifest.json        → displayed in Extensions browser
 //   • src/skill.md         → AI skill description (if present)
 // Note: zip is for local testing only (install via Extensions → Install from file)
 //       and is NOT uploaded as a release asset.
+// Asset naming matches core plugins ({id}-runner.js) so voiden-runner can
+// resolve runner bundles for both core and community plugins the same way.
 
 const releaseFiles = [
   'dist/manifest.json',
@@ -312,7 +314,7 @@ const releaseFiles = [
   `dist/${id}.js`,
   'src/skill.md',
   ...(hasMainProcess ? [`dist/${id}-main.cjs`] : []),
-  ...(hasRunner ? ['dist/runner.js'] : []),
+  ...(hasRunner ? [`dist/${id}-runner.js`] : []),
 ].map(f => `            ${f}`).join('\n');
 
 write(join(dir, '.github', 'workflows', 'release.yml'), `name: Release Plugin
@@ -345,7 +347,7 @@ jobs:
         run: node build-main.mjs
 ${hasRunner ? `
       - name: Build runner bundle
-        # dist/runner.js — consumed by: voiden-runner plugin install ${id}
+        # dist/${id}-runner.js — consumed by: voiden-runner plugin install ${id}
         run: node build-runner.mjs
 ` : ''}
       - name: Generate manifest
@@ -641,9 +643,10 @@ console.log(\`Built dist/\${pluginId}-main.cjs\`)
 `);
 
 // ── build-runner.mjs (only if runner) ────────────────────────────────────────
-// Builds src/runner.ts via esbuild into dist/runner.js (CJS, Node.js target).
-// This file is published as a GitHub release asset named "runner.js" so that
-// `voiden-runner plugin install <id>` can download and use it headlessly.
+// Builds src/runner.ts via esbuild into dist/{id}-runner.js (CJS, Node.js target).
+// This file is published as a GitHub release asset named "{id}-runner.js" —
+// the same convention core plugins use — so that `voiden-runner plugin install
+// <id>` can resolve and download it the same way for both core and community plugins.
 
 if (hasRunner) {
   write(join(dir, 'build-runner.mjs'), `#!/usr/bin/env node
@@ -651,6 +654,7 @@ import { build } from 'esbuild'
 import { existsSync, readFileSync } from 'fs'
 
 const manifest = JSON.parse(readFileSync('./manifest.json', 'utf8'))
+const pluginId = manifest.id
 const entry = './src/runner.ts'
 
 if (!existsSync(entry)) {
@@ -663,7 +667,7 @@ await build({
   bundle: true,
   platform: 'node',
   format: 'cjs',
-  outfile: 'dist/runner.js',
+  outfile: \`dist/\${pluginId}-runner.js\`,
   external: [
     // These are provided by voiden-runner at load time — do not bundle them.
     '@voiden/sdk',
@@ -677,7 +681,7 @@ await build({
   minify: true,
 })
 
-console.log(\`Built dist/runner.js — publish this as a "runner.js" GitHub release asset.\`)
+console.log(\`Built dist/\${pluginId}-runner.js — publish this as a "\${pluginId}-runner.js" GitHub release asset.\`)
 console.log(\`Users install it with: voiden-runner plugin install \${manifest.id}\`)
 `);
 }
@@ -911,10 +915,10 @@ console.log(`
     npm install
     npm run build       # build the renderer bundle
     npm run zip         # package to dist/${id}.zip${hasRunner ? `
-    npm run build:runner  # build dist/runner.js for voiden-runner CLI
+    npm run build:runner  # build dist/${id}-runner.js for voiden-runner CLI
 
   Runner (headless):
-    Publish dist/runner.js as a GitHub release asset named "runner.js"
+    Publish dist/${id}-runner.js as a GitHub release asset named "${id}-runner.js"
     Users install it with: voiden-runner plugin install ${id}` : ''}
 
   Install in Voiden:
