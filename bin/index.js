@@ -651,7 +651,7 @@ console.log(\`Built dist/\${pluginId}-main.cjs\`)
 if (hasRunner) {
   write(join(dir, 'build-runner.mjs'), `#!/usr/bin/env node
 import { build } from 'esbuild'
-import { existsSync, readFileSync } from 'fs'
+import { existsSync, readFileSync, mkdirSync, writeFileSync } from 'fs'
 
 const manifest = JSON.parse(readFileSync('./manifest.json', 'utf8'))
 const pluginId = manifest.id
@@ -680,6 +680,13 @@ await build({
   ],
   minify: true,
 })
+
+// The bundle is esbuild-compiled CJS, but dist/ inherits "type": "module" from
+// this project's package.json — without this override, Node's native ESM loader
+// rejects it with "module is not defined in ES module scope" if you ever
+// import() it directly while testing locally.
+mkdirSync('dist', { recursive: true })
+writeFileSync('dist/package.json', JSON.stringify({ type: 'commonjs' }, null, 2) + '\\n')
 
 console.log(\`Built dist/\${pluginId}-runner.js — publish this as a "\${pluginId}-runner.js" GitHub release asset.\`)
 console.log(\`Users install it with: voiden-runner plugin install \${manifest.id}\`)
