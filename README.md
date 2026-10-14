@@ -20,6 +20,7 @@ npx @voiden/create-plugin my-plugin
 - [Generated Files Explained](#generated-files-explained)
   - [manifest.json](#manifestjson)
   - [src/plugin.ts](#srcplugints)
+  - [src/WelcomePage.tsx](#srcwelcomepagetsx)
   - [build.mjs](#buildmjs)
   - [build-main.mjs](#build-mainmjs)
   - [zip.mjs](#zipmjs)
@@ -65,6 +66,10 @@ npm run zip      # package → dist/my-plugin.zip
 
 Then in Voiden: **Extensions → ⋯ → Install from file → `dist/my-plugin.zip`**
 
+Or, while developing, open the project folder in Voiden and click the **puzzle icon** in the top bar to turn on **Plugin Dev Mode**. Press **Play** in the floating toolbar to build and load the plugin, and **Reload** after each change.
+
+Either way, the new plugin opens a **welcome tab** (`src/WelcomePage.tsx`) and adds a button to the top bar, so you can see it running straight away.
+
 ---
 
 ## What It Creates
@@ -73,10 +78,12 @@ Then in Voiden: **Extensions → ⋯ → Install from file → `dist/my-plugin.z
 my-plugin/
 ├── src/
 │   ├── plugin.ts          ← your plugin entry point (edit this)
+│   ├── WelcomePage.tsx    ← example React component shown in the welcome tab
 │   ├── main-process.ts    ← Electron IPC handlers (only if main process selected)
 │   └── skill.md           ← AI skill description (optional)
 ├── manifest.json          ← plugin identity, permissions, capabilities
 ├── changelog.json         ← release history
+├── README.md              ← getting started, examples, permissions, releasing
 ├── package.json           ← npm metadata and scripts
 ├── tsconfig.json          ← TypeScript config
 ├── build.mjs              ← Vite build script (renderer bundle)
@@ -206,6 +213,16 @@ export default function createMyPlugin(context: CorePluginContext) {
 **`metadata`** — pass `manifest` directly. Voiden uses this to display plugin info in the Extensions browser.
 
 The entry file can be named `plugin.ts` or `plugin.tsx` (for JSX) — the build script detects both automatically.
+
+**Starter example.** The generated `onload` registers a top-bar button and opens a welcome tab rendering `src/WelcomePage.tsx`: the plugin's name and version, getting-started steps, and a "Say hello" button that shows a toast. It uses `context.theme` classes, so it follows the user's theme. The tab opens once per session. Delete the starter block when you build your own features.
+
+---
+
+### `src/WelcomePage.tsx`
+
+A small React component, there to show how plugin UI works. `createWelcomePage(context, manifest)` returns a component that closes over `context`, which is the usual way to give a plugin component access to the API. It also exports `PluginIcon`, used for the top-bar button.
+
+The welcome page lists what plugins can do by feature name, not API name. `build.mjs` detects capabilities by searching the bundle for API names, so writing them out as strings would add capabilities the plugin doesn't have.
 
 ---
 

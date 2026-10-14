@@ -54,6 +54,284 @@ const PERMISSIONS = [
   },
 ];
 
+// ─── Templates ────────────────────────────────────────────────────────────────
+// Written verbatim into every new plugin. README placeholders: __NAME__, __ID__, __DESCRIPTION__.
+
+const WELCOME_PAGE_TSX = `import { useState } from 'react';
+import type { CorePluginContext } from '@voiden/sdk/ui';
+
+type Manifest = { id: string; name: string; version: string; description?: string };
+
+// Colours come from context.theme (Tailwind classes mapped to the active
+// Voiden theme), so this page follows light/dark and custom themes.
+// Layout uses inline styles so it doesn't depend on which utility classes
+// the host app happens to ship.
+
+/** Puzzle-piece mark, used for the top-bar button and the page logo. */
+export function PluginIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M19.439 7.85c-.049.322.059.648.289.878l1.568 1.568c.47.47.706 1.087.706 1.704s-.235 1.233-.706 1.704l-1.611 1.611a.98.98 0 0 1-.837.276c-.47-.07-.802-.48-.968-.925a2.501 2.501 0 1 0-3.214 3.214c.446.166.855.497.925.968a.979.979 0 0 1-.276.837l-1.61 1.61a2.404 2.404 0 0 1-1.705.707 2.402 2.402 0 0 1-1.704-.706l-1.568-1.568a1.026 1.026 0 0 0-.877-.29c-.493.074-.84.504-1.02.968a2.5 2.5 0 1 1-3.237-3.237c.464-.18.894-.527.967-1.02a1.026 1.026 0 0 0-.289-.877l-1.568-1.568A2.402 2.402 0 0 1 1.998 12c0-.617.236-1.234.706-1.704L4.23 8.77c.24-.24.581-.353.917-.303.515.077.877.528 1.073 1.01a2.5 2.5 0 1 0 3.259-3.259c-.482-.196-.933-.558-1.01-1.073-.05-.336.062-.676.303-.917l1.525-1.525A2.402 2.402 0 0 1 12 1.998c.617 0 1.234.236 1.704.706l1.568 1.568c.23.23.556.338.877.29.493-.074.84-.504 1.02-.968a2.5 2.5 0 1 1 3.237 3.237c-.464.18-.894.527-.967 1.02Z" />
+    </svg>
+  );
+}
+
+const STEPS = [
+  { title: 'Edit this page', body: 'Open src/WelcomePage.tsx and change some text.' },
+  { title: 'Reload the plugin', body: 'Click Reload in the Plugin Dev toolbar. It rebuilds and loads your changes.' },
+  { title: 'Build something real', body: 'Register features in src/plugin.ts. README.md has examples for each API.' },
+];
+
+// Feature names only, no API identifiers: the build scans the bundle for API
+// names to fill in manifest capabilities. README.md has the matching API calls.
+const CAPABILITIES = [
+  { feature: 'Slash commands', what: 'Insert your own blocks into .void files' },
+  { feature: 'Sidebar tabs', what: 'A panel in the left or right sidebar' },
+  { feature: 'Editor tabs', what: 'A full tab rendering a React component, like this one' },
+  { feature: 'Command palette', what: 'Actions users can run from the palette', permission: 'commandPalette' },
+  { feature: 'Workspace events', what: 'React to tab, file and project changes', permission: 'events' },
+  { feature: 'Settings', what: 'A section in Voiden Settings', permission: 'settings' },
+];
+
+const join = (...classes: string[]) => classes.join(' ');
+
+export function createWelcomePage(context: CorePluginContext, manifest: Manifest) {
+  const t = context.theme;
+
+  return function WelcomePage() {
+    const [clicks, setClicks] = useState(0);
+
+    const sayHello = () => {
+      const next = clicks + 1;
+      setClicks(next);
+      context.ui.showToast?.('Hello from ' + manifest.name + '! (' + next + ')', 'success');
+    };
+
+    return (
+      <div className={join(t.bg.editor, t.text.primary)} style={{ height: '100%', overflowY: 'auto' }}>
+        <div style={{ maxWidth: 640, margin: '0 auto', padding: '48px 24px' }}>
+          {/* Hero */}
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: 12 }}>
+            <div className={join(t.bg.panel, t.border.DEFAULT, t.text.accent)} style={{ width: 72, height: 72, borderRadius: 18, borderWidth: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <PluginIcon size={36} />
+            </div>
+            <div>
+              <h1 style={{ fontSize: 24, fontWeight: 600, margin: 0 }}>{manifest.name}</h1>
+              <div className={t.text.muted} style={{ fontSize: 12, marginTop: 4, fontFamily: 'monospace' }}>
+                {manifest.id} · v{manifest.version}
+              </div>
+            </div>
+            <p className={t.text.muted} style={{ fontSize: 14, margin: 0 }}>
+              {manifest.description || 'Your plugin is loaded and running inside Voiden.'}
+            </p>
+            <button
+              onClick={sayHello}
+              className={join(t.button.primary, 'text-white')}
+              style={{ marginTop: 4, padding: '6px 14px', borderRadius: 6, fontSize: 13, border: 'none', cursor: 'pointer' }}
+            >
+              Say hello{clicks > 0 ? ' (' + clicks + ')' : ''}
+            </button>
+          </div>
+
+          {/* Get started */}
+          <h2 style={{ fontSize: 13, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.6, margin: '40px 0 12px' }} className={t.text.muted}>
+            Get started
+          </h2>
+          <ol style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {STEPS.map((step, i) => (
+              <li key={step.title} className={join(t.bg.panel, t.border.DEFAULT)} style={{ display: 'flex', gap: 12, padding: 12, borderRadius: 8, borderWidth: 1, borderStyle: 'solid' }}>
+                <span className={join(t.bg.accent, 'text-black')} style={{ flexShrink: 0, width: 20, height: 20, borderRadius: 999, fontSize: 11, fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  {i + 1}
+                </span>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 500 }}>{step.title}</div>
+                  <div className={t.text.muted} style={{ fontSize: 12, marginTop: 2 }}>{step.body}</div>
+                </div>
+              </li>
+            ))}
+          </ol>
+
+          {/* What a plugin can do */}
+          <h2 style={{ fontSize: 13, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.6, margin: '32px 0 12px' }} className={t.text.muted}>
+            What a plugin can do
+          </h2>
+          <div className={t.border.DEFAULT} style={{ borderWidth: 1, borderStyle: 'solid', borderRadius: 8, overflow: 'hidden' }}>
+            {CAPABILITIES.map((cap, i) => (
+              <div key={cap.feature} className={t.border.DEFAULT} style={{ display: 'flex', alignItems: 'baseline', gap: 12, padding: '10px 12px', borderStyle: 'solid', borderWidth: 0, borderTopWidth: i === 0 ? 0 : 1 }}>
+                <span style={{ fontSize: 12, fontWeight: 500, flexShrink: 0, width: 128 }}>{cap.feature}</span>
+                <span className={t.text.muted} style={{ fontSize: 12, flex: 1 }}>{cap.what}</span>
+                {cap.permission && (
+                  <span className={join(t.bg.panel, t.text.muted)} style={{ fontSize: 10, padding: '1px 6px', borderRadius: 4, fontFamily: 'monospace' }} title="Add this to manifest.json permissions">
+                    {cap.permission}
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+
+          <p className={t.text.muted} style={{ fontSize: 12, textAlign: 'center', marginTop: 32 }}>
+            README.md in your project has the full guide: project layout, the dev loop, permissions and publishing.
+          </p>
+        </div>
+      </div>
+    );
+  };
+}
+`;
+
+const README_MD = `# __NAME__
+
+__DESCRIPTION__
+
+A [Voiden](https://voiden.md) plugin, scaffolded with [\`@voiden/create-plugin\`](https://github.com/VoidenHQ/create-plugin).
+
+## Getting started
+
+\`\`\`sh
+npm install
+\`\`\`
+
+Then load it into Voiden in one of two ways.
+
+**Plugin Dev Mode (recommended while developing)**
+
+1. Open this folder as a project in Voiden.
+2. Click the **puzzle icon** in the top bar. A floating dev toolbar appears.
+3. Press **Play** (▶). Voiden builds the plugin and loads it.
+4. A welcome tab opens. That's \`src/WelcomePage.tsx\` running inside Voiden.
+
+Change something in \`src/\`, then press **Reload** (⟳) to rebuild and load it again. **Pause** (⏸) unloads it.
+
+**Install from a zip**
+
+\`\`\`sh
+npm run build
+npm run zip
+\`\`\`
+
+In Voiden: **Extensions → ⋯ → Install from file → \`dist/__ID__.zip\`**.
+
+React, \`@voiden/sdk\` and the editor libraries are provided by Voiden at runtime. \`build.mjs\` maps those imports to Voiden's copies, so they're never bundled.
+
+## Project layout
+
+\`\`\`
+manifest.json            Plugin id, name, version, permissions (read by Voiden)
+changelog.json           Release history, shown in the extension details panel
+package.json             Scripts and dev dependencies
+build.mjs                Renderer bundle: src/plugin.ts → dist/__ID__.js
+build-main.mjs           Main-process bundle (skipped if src/main-process.ts is absent)
+zip.mjs                  Packages dist/ into an installable zip
+generate-manifest.mjs    Writes dist/manifest.json for releases (inlines a local icon)
+.github/workflows/
+  release.yml            Builds and publishes a GitHub release when you push a v* tag
+src/
+  plugin.ts              Entry point: onload / onunload
+  WelcomePage.tsx        Example React component shown in a tab
+  skill.md               Describes the plugin to Voiden's AI features
+\`\`\`
+
+## How a plugin works
+
+\`src/plugin.ts\` default-exports a function. Voiden calls it with a \`context\` object and expects \`onload\`, \`onunload\` and \`metadata\` back. Everything your plugin adds to Voiden goes through \`context\`.
+
+The starter does two things in \`onload\`:
+
+- registers a **top-bar button** (\`context.registerTopBarItem\`)
+- opens a **welcome tab** (\`context.addTab\`) rendering \`src/WelcomePage.tsx\`
+
+Replace those with your own features. The commented examples in \`src/plugin.ts\` cover custom blocks, slash commands, sidebar tabs and request pipeline hooks.
+
+## Examples
+
+### A tab with a React component
+
+\`\`\`tsx
+context.addTab('main', {
+  id: '__ID__-tab',              // same id = focus the existing tab
+  title: 'My Tab',
+  icon: null,
+  props: {},
+  component: MyComponent,
+});
+\`\`\`
+
+### A sidebar tab
+
+\`\`\`ts
+context.registerSidebarTab('right', {
+  id: '__ID__-sidebar',
+  title: 'My Panel',
+  icon: 'Puzzle',                // any lucide-react icon name
+  component: MyPanel,
+});
+\`\`\`
+
+### Slash commands in .void files
+
+\`\`\`ts
+context.addVoidenSlashGroup({
+  name: '__ID__',
+  title: '__NAME__',
+  commands: [
+    {
+      name: 'hello',
+      slash: '/hello',
+      label: 'Insert hello',
+      description: 'Insert a hello paragraph',
+      action: (editor) => editor.chain().focus().insertContent('Hello!').run(),
+    },
+  ],
+});
+\`\`\`
+
+### Command palette (needs the \`commandPalette\` permission)
+
+\`\`\`ts
+context.registerCommand({
+  id: '__ID__.say-hello',
+  label: '__NAME__: Say hello',
+  action: () => context.ui.showToast?.('Hello!', 'info'),
+});
+\`\`\`
+
+### Workspace events (needs the \`events\` permission)
+
+\`\`\`ts
+const off = context.events.on('tab:changed', ({ tabId }) => console.log(tabId));
+// call off() in onunload
+\`\`\`
+
+### Theme-aware styling
+
+\`context.theme\` holds class names that follow the user's theme, for example \`context.theme.bg.panel\`, \`context.theme.text.muted\` and \`context.theme.button.primary\`. Use them instead of hard-coded colours. \`src/WelcomePage.tsx\` shows them in use.
+
+## Permissions
+
+Some APIs only work when listed in \`manifest.json\` under \`permissions\`. Without one, the call throws and Voiden shows a "Needs Permission" badge on the plugin.
+
+| Permission | Unlocks |
+|---|---|
+| \`commandPalette\` | \`context.registerCommand\` |
+| \`contextMenus\` | \`context.registerContextMenu\` |
+| \`events\` | \`context.events.on\` |
+| \`filesystem\` | \`context.fs.*\` (files in the active project) |
+| \`settings\` | \`context.ui.registerSettings\`, \`context.settings.*\` |
+
+## Releasing
+
+1. Bump \`version\` in \`manifest.json\` and \`package.json\`, and add an entry to \`changelog.json\`.
+2. Commit, then tag and push:
+
+   \`\`\`sh
+   git tag v1.0.0
+   git push --tags
+   \`\`\`
+
+   \`.github/workflows/release.yml\` builds the plugin and creates a GitHub release with \`dist/__ID__.js\`, \`dist/manifest.json\` and \`changelog.json\` attached.
+3. To list the plugin in Voiden's Extensions panel, open a pull request to the [Voiden plugin registry](https://github.com/VoidenHQ/plugin-registry) adding a \`"type": "community"\` entry that points at your repository.
+`;
+
 // ─── CLI entry ───────────────────────────────────────────────────────────────
 
 const argName = process.argv[2];
@@ -264,6 +542,7 @@ const pkgJson = {
   },
   devDependencies: {
     '@voiden/sdk': 'latest',
+    '@types/react': '^18.2.0',
     esbuild: '^0.20.0',
     typescript: '^5.0.0',
     vite: '^5.0.0',
@@ -790,13 +1069,44 @@ const pluginTs = `import type { CorePluginContext } from '@voiden/sdk/ui';
 // import { Node, mergeAttributes } from '@tiptap/core'; // uncomment if using custom blocks
 // import React from 'react';                            // uncomment if using sidebar
 import manifest from '../manifest.json';
+import { createWelcomePage, PluginIcon } from './WelcomePage';
 
 type PluginContext = CorePluginContext;
 
+// Tabs are de-duplicated by id: opening the welcome tab again just focuses it.
+const WELCOME_TAB_ID = '${id}-welcome';
+const WELCOMED_KEY = '${id}:welcomed';
+
 export default function ${fnName}(context: PluginContext) {
 ${needsCleanup ? '  const cleanupFns: Array<() => void> = [];' : ''}
+  const openWelcome = () =>
+    context.addTab('main', {
+      id: WELCOME_TAB_ID,
+      title: manifest.name,
+      icon: null,
+      props: {},
+      component: createWelcomePage(context, manifest),
+    });
+
   return {
     onload: async () => {
+
+      // ── Starter: top-bar button + welcome tab ─────────────────────────────
+      // A button in the top bar that opens the welcome tab (src/WelcomePage.tsx).
+      context.registerTopBarItem({
+        id: '${id}.topbar',
+        icon: PluginIcon,
+        tooltip: manifest.name,
+        onClick: openWelcome,
+      });
+
+      // Show the welcome tab once per session so you can see the plugin is
+      // running. Plugins are reloaded together, so this avoids stealing focus
+      // on every reload. Remove it once you've built something of your own.
+      if (!sessionStorage.getItem(WELCOMED_KEY)) {
+        sessionStorage.setItem(WELCOMED_KEY, '1');
+        openWelcome();
+      }
 
       // ── Custom TipTap block node ──────────────────────────────────────────
       // const MyNode = Node.create({
@@ -827,9 +1137,6 @@ ${needsCleanup ? '  const cleanupFns: Array<() => void> = [];' : ''}
       // ── Sidebar tab ───────────────────────────────────────────────────────
       // const SidebarView = () => React.createElement('div', { style: { padding: 16 } }, '${name}');
       // context.registerSidebarTab('right', { id: '${id}', title: '${name}', icon: null, component: SidebarView });
-
-      // ── Top bar button ────────────────────────────────────────────────────
-      // context.registerTopBarItem({ id: '${id}.topbar', icon: MyIcon, tooltip: '${name}', position: 'right', onClick: () => {} });
 
       // ── Request pipeline ──────────────────────────────────────────────────
       // Hooks run in order: PreProcessing → RequestCompilation → PreSend → PostProcessing
@@ -875,6 +1182,19 @@ ${permissionBoilerplate}
 
 write(join(dir, 'src', 'plugin.ts'), pluginTs);
 
+// ── src/WelcomePage.tsx ───────────────────────────────────────────────────────
+// Example React component rendered in the welcome tab — the plugin's "hello world".
+
+write(join(dir, 'src', 'WelcomePage.tsx'), WELCOME_PAGE_TSX);
+
+// ── README.md ─────────────────────────────────────────────────────────────────
+// How to develop, build and release this plugin.
+
+write(join(dir, 'README.md'), README_MD
+  .split('__NAME__').join(name)
+  .split('__ID__').join(id)
+  .split('__DESCRIPTION__').join(description || 'A Voiden plugin.'));
+
 // ── src/main-process.ts (only if mainProcess) ─────────────────────────────────
 
 if (hasMainProcess) {
@@ -913,13 +1233,18 @@ console.log(`
     package.json         tsconfig.json
     build.mjs            zip.mjs
     generate-manifest.mjs${hasMainProcess ? '\n    build-main.mjs' : ''}${hasRunner ? '\n    build-runner.mjs' : ''}
-    .gitignore
-    src/plugin.ts${hasMainProcess ? '\n    src/main-process.ts' : ''}${hasRunner ? '\n    src/runner.ts' : ''}
+    .gitignore           README.md
+    src/plugin.ts        src/WelcomePage.tsx${hasMainProcess ? '\n    src/main-process.ts' : ''}${hasRunner ? '\n    src/runner.ts' : ''}
     src/skill.md
 
   Next steps:
     cd ${outDir}
     npm install
+
+  Develop in Voiden:
+    Open ${outDir} as a project, click the puzzle icon in the top bar, then Play.
+
+  Or build and install a zip:
     npm run build       # build the renderer bundle
     npm run zip         # package to dist/${id}.zip${hasRunner ? `
     npm run build:runner  # build dist/${id}-runner.js for voiden-runner CLI
